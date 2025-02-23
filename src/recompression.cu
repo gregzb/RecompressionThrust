@@ -6,12 +6,15 @@
 #include <thrust/random.h>
 #include <thrust/adjacent_difference.h>
 #include <thrust/iterator/constant_iterator.h>
+#include <thrust/iterator/discard_iterator.h>
+#include <thrust/zip_function.h>
 #include <thrust/transform_scan.h>
 #include <thrust/iterator/transform_output_iterator.h>
 #include <thrust/gather.h>
 #include <thrust/scan.h>
 #include <thrust/count.h>
 #include <thrust/remove.h>
+#include <thrust/unique.h>
 
 #include <chrono>
 #include <iostream>
@@ -61,33 +64,130 @@ namespace Cu
         }
     };
 
+    template <typename T>
+    struct stride_functor : public thrust::unary_function<T, T>
+    {
+        size_t stride;
+        stride_functor(size_t stride) : stride(stride) {}
+        __host__ __device__
+            T
+            operator()(const T &i) const
+        {
+            return i * stride;
+        }
+    };
+
+    // template <class T>
+    // struct SizedIter
+    // {
+    //     T iter;
+    //     size_t size;
+    //     SizedIter(T iter, size_t size) : iter(iter), size(size)
+    //     {
+    //     }
+
+    //     void shrink(size_t new_size)
+    //     {
+    //         if (new_size <= size)
+    //         {
+    //             size = new_size;
+    //         }
+    //         else
+    //         {
+    //             std::cout << "EXITING! New size must be same or less than current size! Current size: " << size << ", new size: " << new_size << std::endl;
+    //             exit(1);
+    //         }
+    //     }
+    // };
+
+    template <class T>
+    struct SizedIter
+    {
+        T iter;
+        size_t size;
+        SizedIter(T iter, size_t size) : iter(iter), size(size)
+        {
+        }
+
+        void shrink(size_t new_size)
+        {
+            if (new_size <= size)
+            {
+                size = new_size;
+            }
+            else
+            {
+                std::cout << "EXITING! New size must be same or less than current size! Current size: " << size << ", new size: " << new_size << std::endl;
+                exit(1);
+            }
+        }
+    };
+
+    struct Arena
+    {
+        thrust::device_vector<unsigned char> buffer;
+        size_t input_items;
+        Arena(size_t num_bytes, size_t input_items) : buffer(num_bytes), input_items(input_items)
+        {
+        }
+
+        // start specified in bytes
+        // stride specified in items
+        template <typename TYPE>
+        auto view_start_at_bytes(size_t start, size_t size, size_t stride = 1)
+        {
+            auto start_ptr = thrust::device_ptr<TYPE>(buffer.data() + start);
+            auto stride_iter =
+                thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor<TYPE>(stride));
+            auto iter = thrust::make_permutation_iterator(start_ptr, stride_iter);
+            return SizedIter(iter, size);
+        }
+
+        // start specified in items
+        // stride specified in items
+        template <typename TYPE>
+        auto view_start_at_items(size_t start, size_t size, size_t stride = 1)
+        {
+            auto start_ptr = thrust::device_ptr<TYPE>(buffer.data()) + start;
+            auto stride_iter =
+                thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor<TYPE>(stride));
+            auto iter = thrust::make_permutation_iterator(start_ptr, stride_iter);
+            return SizedIter(iter, size);
+        }
+    };
+
     // 9
     // new input, new num symbols
-    symbol_t bcomp(thrust::device_vector<symbol_t> &curr_input, symbol_t num_symbols)
+    symbol_t bcomp(Arena &arena, auto curr_input, symbol_t num_symbols, thrust::device_vector<thrust::tuple<symbol_t, symbol_t>> &rules)
     {
         using std::chrono::duration;
         using std::chrono::duration_cast;
         using std::chrono::high_resolution_clock;
         using std::chrono::nanoseconds;
         // thrust::device_vector<thrust::tuple<symbol_t, symbol_t, symbol_t>> keys_counts_indices(curr_input.size());
-        thrust::device_vector<symbol_t> keys_counts_indices = timeF([&]()
-                                                                    { return thrust::device_vector<symbol_t>(curr_input.size() * 3); }, "keys_counts_indices");
-        auto stride_3_iter = thrust::make_transform_iterator(thrust::make_counting_iterator(0), [] __device__(symbol_t index) -> symbol_t
-                                                             { return index * 1; });
-        auto keys_iter = thrust::make_permutation_iterator(keys_counts_indices.begin(), stride_3_iter);
-        auto counts_iter = thrust::make_permutation_iterator(keys_counts_indices.begin() + 1 * curr_input.size(), stride_3_iter);
-        auto indices_iter = thrust::make_permutation_iterator(keys_counts_indices.begin() + 2 * curr_input.size(), stride_3_iter);
+        // thrust::device_vector<symbol_t> keys_counts_indices = timeF([&]()
+        //                                                             { return thrust::device_vector<symbol_t>(curr_input.size() * 3); }, "keys_counts_indices");
+        // auto stride_3_iter = thrust::make_transform_iterator(thrust::make_counting_iterator(0), [] __device__(symbol_t index) -> symbol_t
+        //                                                      { return index * 1; });
+        // auto keys_iter = thrust::make_permutation_iterator(keys_counts_indices.begin(), stride_3_iter);
+        // auto counts_iter = thrust::make_permutation_iterator(keys_counts_indices.begin() + 1 * curr_input.size(), stride_3_iter);
+        // auto indices_iter = thrust::make_permutation_iterator(keys_counts_indices.begin() + 2 * curr_input.size(), stride_3_iter);
+
+        auto keys = arena.view_start_at_items<symbol_t>(1 * arena.input_items, curr_input.size);
+        auto counts = arena.view_start_at_items<symbol_t>(2 * arena.input_items, curr_input.size);
+        auto indices = arena.view_start_at_items<symbol_t>(3 * arena.input_items, curr_input.size);
 
         // thrust::device_vector<symbol_t> keys(curr_input.size());
         // thrust::device_vector<symbol_t> counts(curr_input.size());
         auto [keys_end, counts_end] = timeF([&]()
-                                            { return thrust::reduce_by_key(curr_input.begin(), curr_input.end(), thrust::make_constant_iterator(1), keys_iter, counts_iter); }, "reduce_by_key");
+                                            { return thrust::reduce_by_key(curr_input.iter, curr_input.iter + curr_input_iter.size, thrust::make_constant_iterator(1), keys.iter, counts.iter); }, "reduce_by_key");
         // symbol_t num_blocks = curr_input.size() - timeF([&]()
         //                                                 { return thrust::count(counts_iter, counts_end, 1); }, "count");
 
-        symbol_t next_input_size = keys_end - keys_iter;
+        keys.shrink(keys_end - keys.iter);
+        // symbol_t next_input_size = keys_end - keys_iter;
 
-        if (next_input_size == curr_input.size())
+        if (keys.size == curr_input.size)
         {
             return num_symbols;
         }
@@ -104,6 +204,16 @@ namespace Cu
         // std::cout << std::endl;
 
         // thrust::device_vector<symbol_t> indices(curr_input.size());
+
+        {
+            thrust::host_vector<symbol_t> tmp5(keys_iter, keys_end);
+            for (auto el : tmp5)
+            {
+                std::cout << el << ", ";
+            }
+            std::cout << "\n";
+        }
+
         symbol_t num_keys = keys_end - keys_iter;
         // symbol_t num_keys = 1;
         timeF([&]()
@@ -114,6 +224,15 @@ namespace Cu
         auto zipped_iter_end = timeF([&]()
                                      { return thrust::remove_if(zipped_iter, zipped_iter + (keys_end - keys_iter), [] __device__(const thrust::tuple<symbol_t, symbol_t, symbol_t> &item)
                                                                 { return thrust::get<1>(item) == 1; }); }, "remove_if");
+
+        {
+            thrust::host_vector<symbol_t> tmp5(keys_iter, keys_end);
+            for (auto el : tmp5)
+            {
+                std::cout << el << ", ";
+            }
+            std::cout << "\n";
+        }
 
         // std::cout << "num dups: " << (zipped_iter_end - zipped_iter) << std::endl;
 
@@ -146,6 +265,25 @@ namespace Cu
             return (symbol_t)(!eq); }, [] __device__(symbol_t a, symbol_t b) -> symbol_t
                                              { return a + b; }); return 0; }, "transform_inclusive_scan");
 
+            thrust::unique_by_key_copy(offsets.begin(), offsets.end(), thrust::make_transform_iterator(zipped_iter, thrust::make_zip_function([] __device__(symbol_t a, symbol_t b, symbol_t c)
+                                                                                                                                              { return thrust::make_tuple(a, b); })),
+                                       thrust::make_discard_iterator(), rules.begin() + num_symbols);
+
+            // timeF([&]()
+            //       { thrust::transform(prev_and_next, prev_and_next + offsets.size() - 1, offsets.begin() + 1, [] __device__(const thrust::tuple<thrust::tuple<symbol_t, symbol_t, symbol_t>, thrust::tuple<symbol_t, symbol_t, symbol_t>> &item) -> symbol_t
+            //                           {
+            // bool eq = thrust::get<0>(thrust::get<0>(item)) == thrust::get<0>(thrust::get<1>(item)) && thrust::get<1>(thrust::get<0>(item)) == thrust::get<1>(thrust::get<1>(item));
+            // return (symbol_t)(!eq); }); return 0; }, "transform");
+
+            // // offsets maps to zipper_iter as rules :)
+            // // auto zip_offset
+            // // thrust::copy_if();
+
+            // timeF([&]()
+            //       { thrust::inclusive_scan(offsets.begin(), offsets.end(), offsets.begin()); return 0; }, "inclusive_scan");
+
+            // thrust::copy_if();
+
             symbol_t last_offset = timeF([&]()
                                          { return offsets[offsets.size() - 1]; }, "last offset");
             // thrust::tuple<symbol_t, symbol_t> last_offset = offsets_and_indices[offsets_and_indices.size() - 1];
@@ -160,8 +298,34 @@ namespace Cu
             // thrust::device_vector<symbol_t> next_input(symbols_with_counts.size());
             // thrust::transform(zipped_iter, zipped_iter + symbols_with_counts.size(), curr_input.begin(), [] __device__(const thrust::tuple<symbol_t, symbol_t, symbol_t> &item) -> symbol_t
             //                   { return thrust::get<0>(item); });
+            // {
+            //     thrust::host_vector<symbol_t> tmp5(offset_iter, offset_iter + offsets.size());
+            //     for (auto el : tmp5)
+            //     {
+            //         std::cout << el << ", ";
+            //     }
+            //     std::cout << "\n";
+            // }
+            // {
+            //     thrust::host_vector<symbol_t> tmp5(indices_iter, indices_iter + offsets.size());
+            //     for (auto el : tmp5)
+            //     {
+            //         std::cout << el << ", ";
+            //     }
+            //     std::cout << "\n";
+            // }
+            // {
+            //     thrust::host_vector<symbol_t> tmp5(keys_iter, keys_end);
+            //     for (auto el : tmp5)
+            //     {
+            //         std::cout << el << ", ";
+            //     }
+            //     std::cout << "\n";
+            // }
             timeF([&]()
                   { thrust::scatter(offset_iter, offset_iter + offsets.size(), indices_iter, keys_iter); return 0; }, "scatter");
+            timeF([&]()
+                  {thrust::copy_n(keys_iter, keys_end - keys_iter, curr_input.begin()); return 0; }, "final copy");
         }
         timeF([&]()
               { curr_input.resize(keys_end - keys_iter); return 0; }, "resize");
@@ -288,7 +452,10 @@ namespace Cu
         using std::chrono::nanoseconds;
         symbol_t num_symbols = alphabet_size;
 
+        Arena arena(input.size() * sizeof(symbol_t) * 5);
+
         thrust::device_vector<symbol_t> curr_input = input;
+        thrust::device_vector<thrust::tuple<symbol_t, symbol_t>> rules(curr_input.size());
 
         // {
         //     thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input.end());
@@ -302,23 +469,30 @@ namespace Cu
         int num_layers = 0;
         while (curr_input.size() > 1)
         {
+            {
+                thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input.end());
+                for (auto el : tmp5)
+                {
+                    std::cout << el << ", ";
+                }
+                std::cout << "\n";
+            }
             auto t1 = high_resolution_clock::now();
-            auto new_num_symbols = bcomp(curr_input, num_symbols);
+            auto new_num_symbols = bcomp(curr_input, num_symbols, rules);
             auto t2 = high_resolution_clock::now();
             duration<double, std::milli> ms_double = t2 - t1;
             std::cout << "bcomp " << (ms_double.count()) << " ms" << std::endl;
             num_symbols = new_num_symbols;
+            {
+                thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input.end());
+                for (auto el : tmp5)
+                {
+                    std::cout << el << ", ";
+                }
+                std::cout << "\n";
+            }
 
             exit(0);
-
-            // {
-            //     thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input.end());
-            //     for (auto el : tmp5)
-            //     {
-            //         std::cout << el << ", ";
-            //     }
-            //     std::cout << "\n";
-            // }
 
             num_layers++;
 
