@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25.2)
 project(MyCudaProject LANGUAGES CXX CUDA)
 
 # -------------------------
@@ -6,11 +6,11 @@ project(MyCudaProject LANGUAGES CXX CUDA)
 # -------------------------
 
 # Require C++17 for the host compiler.
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # CUDA standard (CUDA 12.x fully supports C++17 on device).
-set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # If no build type is specified, default to Debug.
