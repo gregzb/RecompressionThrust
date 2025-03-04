@@ -293,8 +293,8 @@ namespace Cu
         //                                                   { return thrust::make_tuple(thrust::get<1>(item), thrust::get<2>(item), thrust::get<3>(item)); }, [] __device__(const thrust::tuple<uint8_t, symbol_t, symbol_t, symbol_t> &item) -> bool
         //                                                   { return false; });
         auto pairs_and_sources_iter = thrust::make_zip_iterator(pairs.iter, indices.iter);
-        auto pairs_and_sources_transformed_iter = thrust::make_transform_iterator(pairs_and_sources_iter, thrust::make_zip_function([] __device__(symbol_t key1, symbol_t key2, symbol_t index) -> thrust::tuple<uint64_t, symbol_t>
-                                                                                                                                    { return thrust::make_tuple(((((uint64_t)(uint32_t)key1) << 32) | key2), index); }));
+        auto pairs_and_sources_transformed_iter = thrust::make_transform_output_iterator(pairs_and_sources_iter, thrust::make_zip_function([] __device__(symbol_t key1, symbol_t key2, symbol_t index) -> thrust::tuple<uint64_t, symbol_t>
+                                                                                                                                           { return thrust::make_tuple(((((uint64_t)(uint32_t)key1) << 32) | key2), index); }));
         {
             auto pairs_and_sources_transformed_end = timeF([&]()
                                                            { return thrust::copy_if(iter_adj, iter_adj + assigned_bit.size - 1, assigned_bit.iter + 1, pairs_and_sources_transformed_iter, thrust::identity<uint8_t>()); }, "copy_if");
@@ -330,21 +330,36 @@ namespace Cu
             // offsets_and_indices[0] = thrust::make_tuple(0, thrust::get<2>(x));
             
              return 0; }, "set first element");
-            auto prev_and_next = thrust::make_zip_iterator(pairs_and_sources_iter, pairs_and_sources_iter + 1);
+            // auto prev_and_next = thrust::make_zip_iterator(pairs_and_sources_iter, pairs_and_sources_iter + 1);
+            // timeF([&]()
+            //       {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + indices.size - 1, offsets.iter + 1, [] __device__(const thrust::tuple<thrust::tuple<uint64_t, symbol_t>, thrust::tuple<uint64_t, symbol_t>> &item) -> thrust::tuple<symbol_t, symbol_t>
+            //                                  {
+            // bool eq = thrust::get<0>(thrust::get<0>(item)) == thrust::get<0>(thrust::get<1>(item)) && thrust::get<1>(thrust::get<0>(item)) == thrust::get<1>(thrust::get<1>(item));
+            // return thrust::make_tuple((symbol_t)(!eq), thrust::get<2>(thrust::get<1>(item))); }, [] __device__(const thrust::tuple<symbol_t, symbol_t> &a, const thrust::tuple<symbol_t, symbol_t> &b) -> thrust::tuple<symbol_t, symbol_t>
+            //                                  { return thrust::make_tuple(thrust::get<0>(a) + thrust::get<0>(b), thrust::get<1>(b)); }); return 0; }, "transform_inclusive_scan");
+
+            // auto prev_and_next = thrust::make_zip_iterator(pairs_and_sources_iter, pairs_and_sources_iter + 1);
+            // timeF([&]()
+            //       {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + indices.size - 1, offsets.iter + 1, [] __device__(const thrust::tuple<thrust::tuple<uint64_t, symbol_t>, thrust::tuple<uint64_t, symbol_t>> &item) -> thrust::tuple<symbol_t, symbol_t>
+            //                                  {
+            // bool eq = thrust::get<0>(thrust::get<0>(item)) == thrust::get<0>(thrust::get<1>(item)) && thrust::get<1>(thrust::get<0>(item)) == thrust::get<1>(thrust::get<1>(item));
+            // return thrust::make_tuple((symbol_t)(!eq), thrust::get<2>(thrust::get<1>(item))); }, [] __device__(const thrust::tuple<symbol_t, symbol_t> &a, const thrust::tuple<symbol_t, symbol_t> &b) -> thrust::tuple<symbol_t, symbol_t>
+            //                                  { return thrust::make_tuple(thrust::get<0>(a) + thrust::get<0>(b), thrust::get<1>(b)); }); return 0; }, "transform_inclusive_scan");
+
+            auto prev_and_next = thrust::make_zip_iterator(pairs.iter, pairs.iter + 1);
             timeF([&]()
-                  {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + indices.size - 1, offsets.iter + 1, [] __device__(const thrust::tuple<thrust::tuple<uint64_t, symbol_t>, thrust::tuple<uint64_t, symbol_t>> &item) -> thrust::tuple<symbol_t, symbol_t>
+                  {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + pairs.size - 1, offsets.iter + 1, [] __device__(const thrust::tuple<uint64_t, uint64_t> &item) -> symbol_t
                                              {
-            bool eq = thrust::get<0>(thrust::get<0>(item)) == thrust::get<0>(thrust::get<1>(item)) && thrust::get<1>(thrust::get<0>(item)) == thrust::get<1>(thrust::get<1>(item));
-            return thrust::make_tuple((symbol_t)(!eq), thrust::get<2>(thrust::get<1>(item))); }, [] __device__(const thrust::tuple<symbol_t, symbol_t> &a, const thrust::tuple<symbol_t, symbol_t> &b) -> thrust::tuple<symbol_t, symbol_t>
-                                             { return thrust::make_tuple(thrust::get<0>(a) + thrust::get<0>(b), thrust::get<1>(b)); }); return 0; }, "transform_inclusive_scan");
+            bool eq = thrust::get<0>(item) == thrust::get<1>(item);
+            return (symbol_t)(!eq); }, thrust::plus<symbol_t>()); return 0; }, "transform_inclusive_scan");
 
-            thrust::tuple<symbol_t, symbol_t> last_el_of_offsets_and_indices = offsets_and_indices[offsets_and_indices.size() - 1];
+            // thrust::tuple<symbol_t, symbol_t> last_el_of_offsets_and_indices = offsets_and_indices[offsets_and_indices.size() - 1];
 
-            auto offset_iter = thrust::make_transform_iterator(offsets_and_indices.begin(), [num_symbols] __device__(const thrust::tuple<symbol_t, symbol_t> &item) -> symbol_t
-                                                               { return num_symbols + thrust::get<0>(item); });
-            auto index_iter = thrust::make_transform_iterator(offsets_and_indices.begin(), [] __device__(const thrust::tuple<symbol_t, symbol_t> &item) -> symbol_t
-                                                              { return thrust::get<1>(item); });
-            symbol_t num_new_symbols = thrust::get<0>(last_el_of_offsets_and_indices) + 1;
+            // auto offset_iter = thrust::make_transform_iterator(offsets_and_indices.begin(), [num_symbols] __device__(const thrust::tuple<symbol_t, symbol_t> &item) -> symbol_t
+            //                                                    { return num_symbols + thrust::get<0>(item); });
+            // auto index_iter = thrust::make_transform_iterator(offsets_and_indices.begin(), [] __device__(const thrust::tuple<symbol_t, symbol_t> &item) -> symbol_t
+            //                                                   { return thrust::get<1>(item); });
+            symbol_t num_new_symbols = offsets.iter[offsets.size - 1] + 1;
             num_symbols += num_new_symbols;
 
             // std::cout << "sz: " << offsets_and_indices.size() << std::endl;
@@ -365,7 +380,7 @@ namespace Cu
             // }
 
             timeF([&]()
-                  { thrust::scatter(offset_iter, offset_iter + offsets_and_indices.size(), index_iter, curr_input.iter); return 0; }, "scatter");
+                  { thrust::scatter(offsets.iter, offsets.iter + offsets.size, indices.iter, curr_input.iter); return 0; }, "scatter");
             // {
             //     thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input_end);
             //     for (auto el : tmp5)
