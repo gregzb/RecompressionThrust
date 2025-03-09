@@ -129,8 +129,6 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
 
     symbol_t next_rule = rules.size();
 
-    // symbol_t alloced = next_rule;
-
     std::vector<bool> rand_bits(rules.size());
     for (symbol_t i = 0; i < rand_bits.size(); i += 16)
     {
@@ -156,7 +154,6 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
                                      .children = {input[i], input[i + 1]},
                                  },
                                  .level = level});
-                // std::cout << "new rule: " << next_rule << " -> " << input[i] << " " << input[i + 1] << "\n";
                 auto [new_it, _insertion_happened] = pair_to_rule.insert({pair, next_rule++});
                 it = new_it;
             }
