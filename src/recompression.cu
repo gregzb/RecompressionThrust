@@ -138,11 +138,6 @@ namespace Cu
             }
         };
 
-        // 9
-        // new input, new num symbols
-        // curr input is expected to be a view at symbol item index 2
-        // template <bool IS_GPU>
-
         static symbol_t bcomp(Arena<IS_GPU> &arena, InputIterT &curr_input, CurrentInputPos &curr_input_pos, symbol_t original_size, symbol_t num_symbols, RulesIterT rules)
         {
             using std::chrono::duration;
@@ -220,9 +215,6 @@ namespace Cu
 
         inline static size_t total_pcomp_sorted = 0;
 
-        // 6
-        // new input, new num symbols
-        // template <bool IS_GPU>
         static symbol_t pcomp(Arena<IS_GPU> &arena, InputIterT &curr_input, CurrentInputPos curr_input_pos, symbol_t original_size, symbol_t num_symbols, RulesIterT rules, int x)
         {
             auto pseudo_rand_bits = arena.template view_start_at_bytes<uint8_t>(original_size / 2 * sizeof(symbol_t) * 3 + 0 * original_size, num_symbols);
@@ -261,18 +253,8 @@ namespace Cu
                 indices.shrink(pairs_and_sources_transformed_end - pairs_and_sources_transformed_iter);
             }
 
-            // {
-            //     thrust::host_vector<symbol_t> tmp5(curr_input.begin(), curr_input_end);
-            //     for (auto el : tmp5)
-            //     {
-            //         std::cout << el << ", ";
-            //     }
-            //     std::cout << "\n";
-            // }
-
             if (pairs.size > 0)
             {
-                // total_pcomp_sorted += pairs.size;
                 timeF([&]()
                       { thrust::sort_by_key(pairs.iter, pairs.iter+pairs.size, indices.iter); return 0; }, "sort");
 
@@ -324,15 +306,6 @@ namespace Cu
 
                     curr_input.shrink(new_end - curr_input_and_idx);
                 }
-                // // auto assigned_bit_raw_ptr = &assigned_bit.iter[0];
-                // auto assigned_bit_raw_ptr = thrust::device_pointer_cast(&assigned_bit.iter[0]);
-                // auto new_end = timeF([&]()
-                //                      { return thrust::remove_if(curr_input_and_idx, curr_input_and_idx + curr_input.size, [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
-                //                                                 {
-                // auto idx = thrust::get<1>(item);
-                // return *(assigned_bit_raw_ptr + idx + 1) == 1; }); }, "remove_if");
-
-                // curr_input.shrink(new_end - curr_input_and_idx);
             }
             return num_symbols;
         }
@@ -357,16 +330,6 @@ namespace Cu
 
             thrust::copy(input.begin(), input.end(), curr_input.iter);
             auto ts = high_resolution_clock::now();
-
-            // {
-            //     thrust::host_vector<symbol_t> tmp5(curr_input.iter, curr_input.iter + curr_input.size);
-            //     for (auto el : tmp5)
-            //     {
-            //         std::cout << el << ", ";
-            //     }
-            //     std::cout << "\n";
-            // }
-
             int num_layers = 0;
             while (curr_input.size > 1)
             {
@@ -376,14 +339,6 @@ namespace Cu
                 duration<double, std::milli> ms_double = t2 - t1;
                 std::cout << "bcomp " << (ms_double.count()) << " ms, " << num_symbols << " symbols" << "\n";
                 num_symbols = new_num_symbols;
-                // {
-                //     thrust::host_vector<symbol_t> tmp5(curr_input.iter, curr_input.iter + curr_input.size);
-                //     for (auto el : tmp5)
-                //     {
-                //         std::cout << el << ", ";
-                //     }
-                //     std::cout << "\n";
-                // }
 
                 num_layers++;
 
@@ -398,14 +353,6 @@ namespace Cu
                 {
                     size_t prev_size = curr_input.size;
                     auto new_num_symbols2 = pcomp(arena, curr_input, curr_input_pos, unit_size, num_symbols, rules, cnt);
-                    // {
-                    //     thrust::host_vector<symbol_t> tmp5(curr_input.iter, curr_input.iter + curr_input.size);
-                    //     for (auto el : tmp5)
-                    //     {
-                    //         std::cout << el << ", ";
-                    //     }
-                    //     std::cout << "\n";
-                    // }
                     t4 = high_resolution_clock::now();
                     if (curr_input.size != prev_size)
                     {
