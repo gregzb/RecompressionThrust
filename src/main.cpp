@@ -15,6 +15,8 @@
 #include "util.hpp"
 #include "recompression.hpp"
 
+#include <argparse/argparse.hpp>
+
 struct Rlslp
 {
     struct Pair
@@ -351,20 +353,54 @@ std::string read_file_into_string(const std::string &filePath)
 
 int main(int argc, char **argv)
 {
+    argparse::ArgumentParser program("recompression");
+    std::string mode;
+    std::string input_filename;
+    std::string output_filename;
+    program.add_argument("--mode").help("Select how to run recompression. Options: cpu, thrust-cpu, thrust-gpu. Defaults to thrust-gpu").default_value("thrust-gpu").store_into(mode);
+    program.add_argument("input").help("What file to compress").store_into(input_filename);
+    program.add_argument("output").help("Name of the file to output the compressed format into").store_into(output_filename);
+    try
+    {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::exception &err)
+    {
+        std::cerr << "Failed to parse args" << std::endl;
+        std::cerr << err.what() << std::endl;
+        std::cerr << program;
+        std::exit(1);
+    }
 
-    auto text_to_compress = read_file_into_string(argv[1]);
+    auto text_to_compress = read_file_into_string(input_filename);
     auto vec_to_compress = to_vec(text_to_compress);
     using std::chrono::duration;
     using std::chrono::duration_cast;
     using std::chrono::high_resolution_clock;
     using std::chrono::nanoseconds;
     Cu::init();
-    auto t1 = high_resolution_clock::now();
+    // auto t1 = high_resolution_clock::now();
     // auto rlslp = recompression(256, vec_to_compress);
-    Cu::recompression(256, vec_to_compress);
-    auto t2 = high_resolution_clock::now();
-    duration<double, std::milli> ms_double = t2 - t1;
-    std::cout << "total " << (ms_double.count()) << " ms\n";
+    if (mode == "cpu")
+    {
+        recompression(256, vec_to_compress);
+    }
+    else if (mode == "thrust-cpu")
+    {
+        Cu::Thrust<false>::recompression(256, vec_to_compress);
+    }
+    else if (mode == "thrust-gpu")
+    {
+        Cu::Thrust<true>::recompression(256, vec_to_compress);
+    }
+    else
+    {
+        std::cout << "Unknown mode: " << mode << std::endl;
+        exit(1);
+    }
+    // auto t2 = high_resolution_clock::now();
+    // duration<double, std::milli> ms_double = t2 - t1;
+    // std::cout << "total " << (ms_double.count()) << " ms\n";
     // auto expanded = expand(rlslp);
     // auto expanded_text = to_string(expanded);
     // // std::cout << text_to_compress << std::endl;

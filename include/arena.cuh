@@ -1,3 +1,4 @@
+#pragma once
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/iterator/transform_iterator.h>
@@ -42,9 +43,13 @@ namespace Cu
         }
     };
 
+    template <bool GPU>
     struct Arena
     {
-        thrust::device_vector<unsigned char> buffer;
+        using vector_type = typename std::conditional<GPU,
+                                                      thrust::device_vector<unsigned char>,
+                                                      thrust::host_vector<unsigned char>>::type;
+        vector_type buffer;
         Arena(size_t num_bytes) : buffer(num_bytes)
         {
         }
@@ -54,11 +59,24 @@ namespace Cu
         template <typename TYPE>
         auto view_start_at_bytes(size_t start, size_t size, size_t stride = 1)
         {
-            auto start_ptr = thrust::device_pointer_cast<TYPE>((TYPE *)(thrust::raw_pointer_cast(buffer.data()) + start));
-            auto stride_iter =
-                thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor(stride));
-            auto iter = thrust::make_permutation_iterator(start_ptr, stride_iter);
-            return SizedIter(iter, size);
+            auto raw_ptr = thrust::raw_pointer_cast(buffer.data());
+
+            if constexpr (GPU)
+            {
+                // For GPU, convert the raw pointer to a device pointer.
+                auto start_ptr = thrust::device_pointer_cast(reinterpret_cast<TYPE *>(raw_ptr + start));
+                auto stride_iter = thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor(stride));
+                auto iter = thrust::make_permutation_iterator(start_ptr, stride_iter);
+                return SizedIter(iter, size);
+            }
+            else
+            {
+                // For CPU, just use the raw pointer.
+                auto start_ptr = reinterpret_cast<TYPE *>(raw_ptr + start);
+                auto stride_iter = thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor(stride));
+                auto iter = thrust::make_permutation_iterator(start_ptr, stride_iter);
+                return SizedIter(iter, size);
+            }
         }
 
         // start specified in items

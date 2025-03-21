@@ -13,6 +13,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
+# add_compile_definitions(THRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_OMP)
+
+
 # If no build type is specified, default to Debug.
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING 
@@ -60,7 +63,22 @@ file(GLOB_RECURSE PROJECT_SOURCES
 # -------------------------
 #  Executable
 # -------------------------
+# find_package(OpenMP REQUIRED)
+
 add_executable(MyCudaProjectExe ${PROJECT_SOURCES})
+
+# target_link_libraries(MyCudaProjectExe PRIVATE OpenMP::OpenMP_CXX)
+# target_compile_options(MyCudaProjectExe PRIVATE 
+#   $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler;-fopenmp>
+# )
+
+include(FetchContent)
+FetchContent_Declare(
+    argparse
+    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+)
+FetchContent_MakeAvailable(argparse)
+target_link_libraries(MyCudaProjectExe argparse)
 
 # Optionally set properties on the target.
 set_target_properties(MyCudaProjectExe PROPERTIES
