@@ -1,44 +1,32 @@
-#include <iostream>
-#include <vector>
-#include <array>
-#include <unordered_map>
-#include <utility>
 #include <algorithm>
-#include <string>
+#include <array>
+#include <cctype>
+#include <chrono>
+#include <fstream>
+#include <iostream>
 #include <random>
 #include <sstream>
-#include <cctype>
-#include <fstream>
-#include <chrono>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "recompression.hpp"
 #include "types.hpp"
 #include "util.hpp"
-#include "recompression.hpp"
 
-#include <argparse/argparse.hpp>
 #include "mio/mio.hpp"
+#include <argparse/argparse.hpp>
 
 struct Rlslp
 {
     struct Pair
     {
         std::array<symbol_t, 2> children;
-        symbol_t &left()
-        {
-            return children[0];
-        }
-        const symbol_t &left() const
-        {
-            return children[0];
-        }
-        symbol_t &right()
-        {
-            return children[1];
-        }
-        const symbol_t &right() const
-        {
-            return children[1];
-        }
+        symbol_t &left() { return children[0]; }
+        const symbol_t &left() const { return children[0]; }
+        symbol_t &right() { return children[1]; }
+        const symbol_t &right() const { return children[1]; }
     };
 
     struct Block
@@ -62,20 +50,13 @@ struct Rlslp
     symbol_t root;
     len_t len;
 
-    static bool level_is_block(level_t level)
-    {
-        return level % 2 == 1;
-    }
+    static bool level_is_block(level_t level) { return level % 2 == 1; }
 
-    static bool level_is_pair(level_t level)
-    {
-        return level % 2 == 0;
-    }
+    static bool level_is_pair(level_t level) { return level % 2 == 0; }
 };
 
 std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, level_t level)
 {
-    // std::cout << "bcomp level: " << level << std::endl;
     std::vector<symbol_t> output;
 
     symbol_t next_rule = rules.size();
@@ -95,10 +76,7 @@ std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
         auto it = block_to_rule.find(block);
         if (it == block_to_rule.end())
         {
-            rules.push_back({.block = {
-                                 .symbol = current_symbol,
-                                 .count = current_len},
-                             .level = level});
+            rules.push_back({.block = {.symbol = current_symbol, .count = current_len}, .level = level});
             auto [new_it, _insertion_happened] = block_to_rule.insert({block, next_rule++});
             it = new_it;
         }
@@ -127,7 +105,6 @@ std::uniform_int_distribution<std::mt19937::result_type> dist16(0, (1 << 16) - 1
 
 std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, level_t level)
 {
-    // std::cout << "pcomp level: " << level << std::endl;
     std::vector<symbol_t> output;
 
     symbol_t next_rule = rules.size();
@@ -153,9 +130,10 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
             auto it = pair_to_rule.find(pair);
             if (it == pair_to_rule.end())
             {
-                rules.push_back({.pair = {
-                                     .children = {input[i], input[i + 1]},
-                                 },
+                rules.push_back({.pair =
+                                     {
+                                         .children = {input[i], input[i + 1]},
+                                     },
                                  .level = level});
                 auto [new_it, _insertion_happened] = pair_to_rule.insert({pair, next_rule++});
                 it = new_it;
@@ -175,11 +153,10 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
 
 Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
 {
-    Rlslp rlslp{
-        .rules = std::vector<Rlslp::Rule>(256, Rlslp::Rule{}),
-        .alphabet_size = 256,
-        .root = -1,
-        .len = (len_t)input.size()};
+    Rlslp rlslp{.rules = std::vector<Rlslp::Rule>(256, Rlslp::Rule{}),
+                .alphabet_size = 256,
+                .root = -1,
+                .len = (len_t)input.size()};
 
     level_t level = 1;
     while (input.size() > 1)
@@ -197,11 +174,7 @@ Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
         } while (input.size() == next_input.size());
         input = next_input;
         level++;
-
-        std::cout << input.size() << std::endl;
     }
-
-    std::cout << "layers: " << level << std::endl;
 
     rlslp.root = rlslp.rules.size() - 1;
     return rlslp;
@@ -322,41 +295,16 @@ std::string generate_dot(const Rlslp &rlslp)
 
     out << "}\n";
 
-    std::cout << "indeg > 1: " << cnt << std::endl;
+    std::cout << "nodes with indeg > 1: " << cnt << std::endl;
+    std::cout << "total nodes: " << (indeg.size() - rlslp.alphabet_size) << std::endl;
 
     return out.str();
 };
 
-std::string read_file_into_string(const std::string &filePath)
-{
-    std::ifstream file(filePath, std::ios::in | std::ios::binary | std::ios::ate);
-    if (!file.is_open())
-    {
-        throw std::runtime_error("Failed to open file: " + filePath);
-    }
-
-    // Determine file size.
-    std::streamsize fileSize = file.tellg();
-    // Move to the start of the file.
-    file.seekg(0, std::ios::beg);
-
-    // Create a string to hold the data.
-    std::string buffer(fileSize, '\0');
-
-    // Read all characters into the string.
-    if (!file.read(&buffer[0], fileSize))
-    {
-        throw std::runtime_error("Failed to read file: " + filePath);
-    }
-
-    return buffer; // Return the file contents as a string.
-}
-
 auto read_file(const std::string &file_path)
 {
     std::error_code error;
-    mio::mmap_source read_only_file = mio::make_mmap_source(
-        file_path, 0, mio::map_entire_file, error);
+    mio::mmap_source read_only_file = mio::make_mmap_source(file_path, 0, mio::map_entire_file, error);
     if (error)
     {
         std::cout << "Failed to read file at " << file_path << ", exiting!" << std::endl;
@@ -372,9 +320,14 @@ int main(int argc, char **argv)
     std::string mode;
     std::string input_filename;
     std::string output_filename;
-    program.add_argument("--mode").help("Select how to run recompression. Options: cpu, thrust-cpu, thrust-gpu. Defaults to thrust-gpu").default_value("thrust-gpu").store_into(mode);
+    program.add_argument("--mode")
+        .help("Select how to run recompression. Options: cpu, thrust-cpu, thrust-gpu. Defaults to thrust-gpu")
+        .default_value("thrust-gpu")
+        .store_into(mode);
     program.add_argument("input").help("What file to compress").store_into(input_filename);
-    program.add_argument("output").help("Name of the file to output the compressed format into").store_into(output_filename);
+    program.add_argument("output")
+        .help("Name of the file to output the compressed format into")
+        .store_into(output_filename);
     try
     {
         program.parse_args(argc, argv);
@@ -398,17 +351,30 @@ int main(int argc, char **argv)
     // auto rlslp = recompression(256, vec_to_compress);
     if (mode == "cpu")
     {
-        auto vec_to_compress = std::vector<symbol_t>(read_only_file.begin(), read_only_file.end());
-        recompression(256, vec_to_compress);
+        time_f_print_void([&]()
+                          {
+                              auto vec_to_compress = time_f_print([&]()
+                                                                  { return std::vector<symbol_t>(read_only_file.begin(), read_only_file.end()); },
+                                                                  "read file and transfer to a convenient spot in memory");
+                              auto rlslp = recompression(256, vec_to_compress);
+                                auto dot_str = generate_dot(rlslp);
+                              {
+                                  std::ofstream dot_out("debug.dot");
+                                  dot_out << dot_str;
+                              } },
+                          "plain cpu recompression w/ file read");
     }
     else if (mode == "thrust-cpu")
     {
-        Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
+        time_f_print_void([&]()
+                          { Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end()); }, "thrust-cpu recompression w/ file read");
     }
     else if (mode == "thrust-gpu")
     {
-        Cu::init();
-        Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
+        time_f_print_void([&]()
+                          { Cu::init(); }, "cuda init");
+        time_f_print_void([&]()
+                          { Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end()); }, "thrust-gpu recompression w/ file read");
     }
     else
     {
