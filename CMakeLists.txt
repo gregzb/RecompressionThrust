@@ -82,7 +82,7 @@ target_link_libraries(MyCudaProjectExe argparse)
 
 # Optionally set properties on the target.
 set_target_properties(MyCudaProjectExe PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CUDA_ARCHITECTURES "75"
 )

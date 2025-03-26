@@ -16,6 +16,7 @@
 #include "recompression.hpp"
 
 #include <argparse/argparse.hpp>
+#include "mio/mio.hpp"
 
 struct Rlslp
 {
@@ -172,7 +173,7 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
     return output;
 }
 
-Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> input)
+Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
 {
     Rlslp rlslp{
         .rules = std::vector<Rlslp::Rule>(256, Rlslp::Rule{}),
@@ -351,6 +352,20 @@ std::string read_file_into_string(const std::string &filePath)
     return buffer; // Return the file contents as a string.
 }
 
+auto read_file(const std::string &file_path)
+{
+    std::error_code error;
+    mio::mmap_source read_only_file = mio::make_mmap_source(
+        file_path, 0, mio::map_entire_file, error);
+    if (error)
+    {
+        std::cout << "Failed to read file at " << file_path << ", exiting!" << std::endl;
+        std::cout << error.message() << std::endl;
+        exit(error.value());
+    }
+    return read_only_file;
+}
+
 int main(int argc, char **argv)
 {
     argparse::ArgumentParser program("recompression");
@@ -372,26 +387,28 @@ int main(int argc, char **argv)
         std::exit(1);
     }
 
-    auto text_to_compress = read_file_into_string(input_filename);
-    auto vec_to_compress = to_vec(text_to_compress);
+    // auto text_to_compress = read_file_into_string(input_filename);
+    auto read_only_file = read_file(input_filename);
+    // auto vec_to_compress = to_vec(text_to_compress);
     using std::chrono::duration;
     using std::chrono::duration_cast;
     using std::chrono::high_resolution_clock;
     using std::chrono::nanoseconds;
-    Cu::init();
     // auto t1 = high_resolution_clock::now();
     // auto rlslp = recompression(256, vec_to_compress);
     if (mode == "cpu")
     {
+        auto vec_to_compress = std::vector<symbol_t>(read_only_file.begin(), read_only_file.end());
         recompression(256, vec_to_compress);
     }
     else if (mode == "thrust-cpu")
     {
-        Cu::Thrust<false>::recompression(256, vec_to_compress);
+        Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
     }
     else if (mode == "thrust-gpu")
     {
-        Cu::Thrust<true>::recompression(256, vec_to_compress);
+        Cu::init();
+        Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
     }
     else
     {

@@ -20,21 +20,9 @@
 #include <iostream>
 #include "types.hpp"
 #include "arena.cuh"
+#include "util.hpp"
 
-auto timeF(auto f, const std::string &str)
-{
-    using std::chrono::duration;
-    using std::chrono::duration_cast;
-    using std::chrono::high_resolution_clock;
-    using std::chrono::nanoseconds;
-
-    auto t1 = high_resolution_clock::now();
-    auto ret = f();
-    auto t2 = high_resolution_clock::now();
-    duration<double, std::milli> ms_double = t2 - t1;
-    // std::cout << str << " took " << ms_double.count() << " ms\n";
-    return ret;
-};
+#include "mio/mio.hpp"
 
 namespace Cu
 {
@@ -150,8 +138,8 @@ namespace Cu
             auto indices = view_for(arena, curr_input_pos, original_size, curr_input.size);
             auto keys_counts_double = arena.template view_start_at_bytes<uint64_t>(0 * original_size * sizeof(symbol_t), curr_input.size);
 
-            auto [keys_end, counts_end] = timeF([&]()
-                                                { return thrust::reduce_by_key(curr_input.iter, curr_input.iter + curr_input.size, thrust::make_constant_iterator(1), keys.iter, counts.iter); }, "reduce_by_key");
+            auto [keys_end, counts_end] = time_f_print([&]()
+                                                       { return thrust::reduce_by_key(curr_input.iter, curr_input.iter + curr_input.size, thrust::make_constant_iterator(1), keys.iter, counts.iter); }, "reduce_by_key");
 
             keys.shrink(keys_end - keys.iter);
 
@@ -167,7 +155,7 @@ namespace Cu
             auto transform_it = thrust::make_transform_output_iterator(
                 keys_counts_and_indices,
                 thrust::make_zip_function(make_key_count_tuple()));
-            // auto transform_it_end = timeF([&]()
+            // auto transform_it_end = time_f_print([&]()
             //                               { return thrust::copy_if(zip_iter, zip_iter + keys.size, transform_it, thrust::make_zip_function([] __host__ __device__(symbol_t key, symbol_t count, symbol_t index) -> bool
             //                                                                                                                                { return count > 1; })); }, "copy if");
             auto transform_it_end = thrust::copy_if(
@@ -178,35 +166,35 @@ namespace Cu
 
             if (num_blocks > 0)
             {
-                timeF([&]()
-                      { thrust::sort_by_key(keys_counts_double.iter, keys_counts_double.iter + num_blocks, indices.iter); return 0; }, "sort");
+                time_f_print([&]()
+                             { thrust::sort_by_key(keys_counts_double.iter, keys_counts_double.iter + num_blocks, indices.iter); return 0; }, "sort");
 
                 auto offsets = arena.template view_start_at_items<symbol_t>(4 * original_size, num_blocks);
 
                 offsets.iter[0] = 0;
                 auto prev_and_next = thrust::make_zip_iterator(keys_counts_and_indices, keys_counts_and_indices + 1);
-                timeF([&]()
-                      { thrust::transform_inclusive_scan(prev_and_next, prev_and_next + offsets.size - 1, offsets.iter + 1, [] __host__ __device__(const thrust::tuple<thrust::tuple<uint64_t, symbol_t>, thrust::tuple<uint64_t, symbol_t>> &item) -> symbol_t
+                time_f_print([&]()
+                             { thrust::transform_inclusive_scan(prev_and_next, prev_and_next + offsets.size - 1, offsets.iter + 1, [] __host__ __device__(const thrust::tuple<thrust::tuple<uint64_t, symbol_t>, thrust::tuple<uint64_t, symbol_t>> &item) -> symbol_t
                                              {
             bool eq = thrust::get<0>(thrust::get<0>(item)) == thrust::get<0>(thrust::get<1>(item));
             return (symbol_t)(!eq); }, [] __host__ __device__(symbol_t a, symbol_t b) -> symbol_t
                                              { return a + b; }); return 0; }, "transform_inclusive_scan");
 
-                timeF([&]()
-                      { thrust::unique_by_key_copy(offsets.iter, offsets.iter + offsets.size, thrust::make_transform_iterator(keys_counts_double.iter, [] __host__ __device__(uint64_t item) -> thrust::tuple<symbol_t, symbol_t>
+                time_f_print([&]()
+                             { thrust::unique_by_key_copy(offsets.iter, offsets.iter + offsets.size, thrust::make_transform_iterator(keys_counts_double.iter, [] __host__ __device__(uint64_t item) -> thrust::tuple<symbol_t, symbol_t>
                                                                                                                   { return thrust::make_tuple(item >> 32, item & 0xffffffff); }),
                                        thrust::make_discard_iterator(), rules.iter + num_symbols); return 0; }, "unique by key copy");
 
-                symbol_t last_offset = timeF([&]()
-                                             { return offsets.iter[offsets.size - 1]; }, "last offset");
+                symbol_t last_offset = time_f_print([&]()
+                                                    { return offsets.iter[offsets.size - 1]; }, "last offset");
 
                 auto offset_iter = thrust::make_transform_iterator(offsets.iter, [num_symbols] __host__ __device__(const symbol_t &offset) -> symbol_t
                                                                    { return num_symbols + offset; });
                 symbol_t num_new_symbols = last_offset + 1;
                 num_symbols += num_new_symbols;
 
-                timeF([&]()
-                      { thrust::scatter(offset_iter, offset_iter + offsets.size, indices.iter, keys.iter); return 0; }, "scatter");
+                time_f_print([&]()
+                             { thrust::scatter(offset_iter, offset_iter + offsets.size, indices.iter, keys.iter); return 0; }, "scatter");
             }
             curr_input = keys;
             curr_input_pos = other_pos(curr_input_pos);
@@ -219,20 +207,20 @@ namespace Cu
         {
             auto pseudo_rand_bits = arena.template view_start_at_bytes<uint8_t>(original_size / 2 * sizeof(symbol_t) * 3 + 0 * original_size, num_symbols);
             auto counting_iter = thrust::make_counting_iterator(0);
-            timeF([&]()
-                  {
+            time_f_print([&]()
+                         {
             thrust::transform(counting_iter, counting_iter + pseudo_rand_bits.size, pseudo_rand_bits.iter, efficient_random_byte_functor(num_symbols + x));
             return 0; }, "get random bits");
 
             auto assigned_bit = arena.template view_start_at_bytes<uint8_t>(original_size / 2 * sizeof(symbol_t) * 3 + 1 * original_size, curr_input.size);
 
-            timeF([&]()
-                  {
+            time_f_print([&]()
+                         {
             thrust::gather(curr_input.iter, curr_input.iter + curr_input.size, pseudo_rand_bits.iter, assigned_bit.iter);
             return 0; }, "gather");
 
-            timeF([&]()
-                  {
+            time_f_print([&]()
+                         {
             thrust::adjacent_difference(assigned_bit.iter, assigned_bit.iter + assigned_bit.size, assigned_bit.iter, [] __host__ __device__(uint8_t curr, uint8_t prev) -> uint8_t
                                         { return curr && !prev; });
             return 0; }, "adjacent difference");
@@ -246,8 +234,8 @@ namespace Cu
             auto pairs_and_sources_iter = thrust::make_zip_iterator(pairs.iter, indices.iter);
             auto pairs_and_sources_transformed_iter = thrust::make_transform_output_iterator(pairs_and_sources_iter, thrust::make_zip_function(make_key_count_tuple()));
             {
-                auto pairs_and_sources_transformed_end = timeF([&]()
-                                                               { return thrust::copy_if(iter_adj, iter_adj + assigned_bit.size - 1, assigned_bit.iter + 1, pairs_and_sources_transformed_iter, thrust::identity<uint8_t>()); }, "copy_if");
+                auto pairs_and_sources_transformed_end = time_f_print([&]()
+                                                                      { return thrust::copy_if(iter_adj, iter_adj + assigned_bit.size - 1, assigned_bit.iter + 1, pairs_and_sources_transformed_iter, thrust::identity<uint8_t>()); }, "copy_if");
 
                 pairs.shrink(pairs_and_sources_transformed_end - pairs_and_sources_transformed_iter);
                 indices.shrink(pairs_and_sources_transformed_end - pairs_and_sources_transformed_iter);
@@ -255,23 +243,23 @@ namespace Cu
 
             if (pairs.size > 0)
             {
-                timeF([&]()
-                      { thrust::sort_by_key(pairs.iter, pairs.iter+pairs.size, indices.iter); return 0; }, "sort");
+                time_f_print([&]()
+                             { thrust::sort_by_key(pairs.iter, pairs.iter+pairs.size, indices.iter); return 0; }, "sort");
 
                 auto offsets = arena.template view_start_at_items<symbol_t>(4 * original_size, pairs.size);
 
-                timeF([&]()
-                      { return 0; }, "set first element");
+                time_f_print([&]()
+                             { return 0; }, "set first element");
 
                 auto prev_and_next = thrust::make_zip_iterator(pairs.iter, pairs.iter + 1);
-                timeF([&]()
-                      {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + pairs.size - 1, offsets.iter + 1, [] __host__ __device__(const thrust::tuple<uint64_t, uint64_t> &item) -> symbol_t
+                time_f_print([&]()
+                             {thrust::transform_inclusive_scan(prev_and_next, prev_and_next + pairs.size - 1, offsets.iter + 1, [] __host__ __device__(const thrust::tuple<uint64_t, uint64_t> &item) -> symbol_t
                                              {
             bool eq = thrust::get<0>(item) == thrust::get<1>(item);
             return (symbol_t)(!eq); }, thrust::plus<symbol_t>()); return 0; }, "transform_inclusive_scan");
 
-                timeF([&]()
-                      { thrust::unique_by_key_copy(offsets.iter, offsets.iter + offsets.size, thrust::make_transform_iterator(pairs.iter, [] __host__ __device__(uint64_t item) -> thrust::tuple<symbol_t, symbol_t>
+                time_f_print([&]()
+                             { thrust::unique_by_key_copy(offsets.iter, offsets.iter + offsets.size, thrust::make_transform_iterator(pairs.iter, [] __host__ __device__(uint64_t item) -> thrust::tuple<symbol_t, symbol_t>
                                                                                                                   { return thrust::make_tuple(item >> 32, item & 0xffffffff); }),
                                        thrust::make_discard_iterator(), rules.iter + num_symbols); return 0; }, "unique by key copy");
 
@@ -280,16 +268,16 @@ namespace Cu
                 symbol_t num_new_symbols = offsets.iter[offsets.size - 1] + 1;
                 num_symbols += num_new_symbols;
 
-                timeF([&]()
-                      { thrust::scatter(offset_iter, offset_iter + offsets.size, indices.iter, curr_input.iter); return 0; }, "scatter");
+                time_f_print([&]()
+                             { thrust::scatter(offset_iter, offset_iter + offsets.size, indices.iter, curr_input.iter); return 0; }, "scatter");
 
                 auto curr_input_and_idx = thrust::make_zip_iterator(curr_input.iter, thrust::make_counting_iterator(0));
                 if constexpr (IS_GPU)
                 {
                     auto assigned_bit_raw_ptr = thrust::device_pointer_cast(&assigned_bit.iter[0]);
-                    auto new_end = timeF([&]()
-                                         { return thrust::remove_if(curr_input_and_idx, curr_input_and_idx + curr_input.size, [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
-                                                                    {
+                    auto new_end = time_f_print([&]()
+                                                { return thrust::remove_if(curr_input_and_idx, curr_input_and_idx + curr_input.size, [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
+                                                                           {
                 auto idx = thrust::get<1>(item);
                 return *(assigned_bit_raw_ptr + idx + 1) == 1; }); }, "remove_if");
 
@@ -298,9 +286,9 @@ namespace Cu
                 else
                 {
                     auto assigned_bit_raw_ptr = &assigned_bit.iter[0];
-                    auto new_end = timeF([&]()
-                                         { return thrust::remove_if(curr_input_and_idx, curr_input_and_idx + curr_input.size, [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
-                                                                    {
+                    auto new_end = time_f_print([&]()
+                                                { return thrust::remove_if(curr_input_and_idx, curr_input_and_idx + curr_input.size, [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
+                                                                           {
                 auto idx = thrust::get<1>(item);
                 return *(assigned_bit_raw_ptr + idx + 1) == 1; }); }, "remove_if");
 
@@ -310,7 +298,8 @@ namespace Cu
             return num_symbols;
         }
 
-        static void recompression(symbol_t alphabet_size, std::vector<symbol_t> input)
+        using iter_t = const char *;
+        static void recompression(symbol_t alphabet_size, iter_t begin, iter_t end)
         {
             using std::chrono::duration;
             using std::chrono::duration_cast;
@@ -318,17 +307,20 @@ namespace Cu
             using std::chrono::nanoseconds;
             symbol_t num_symbols = alphabet_size;
 
-            symbol_t unit_size = std::max(alphabet_size * 4, (symbol_t)input.size());
+            symbol_t input_size = end - begin;
+
+            symbol_t unit_size = std::max(alphabet_size * 4, input_size);
 
             Arena<IS_GPU> arena(unit_size * sizeof(symbol_t) * 7);
-            auto curr_input = arena.template view_start_at_items<symbol_t>(2 * unit_size, input.size());
+            auto initial_input = arena.template view_start_at_items<char>(0 * unit_size, input_size);
+            auto curr_input = arena.template view_start_at_items<symbol_t>(2 * unit_size, input_size);
 
             auto curr_input_pos = CurrentInputPos::TWO;
 
-            // thrust::device_vector<thrust::tuple<symbol_t, symbol_t>> rules(curr_input.size);
-            auto rules = arena.template view_start_at_bytes<thrust::tuple<symbol_t, symbol_t>>(5 * unit_size * sizeof(symbol_t), input.size());
+            auto rules = arena.template view_start_at_bytes<thrust::tuple<symbol_t, symbol_t>>(5 * unit_size * sizeof(symbol_t), input_size);
 
-            thrust::copy(input.begin(), input.end(), curr_input.iter);
+            thrust::copy(begin, end, initial_input.iter);
+            thrust::copy(initial_input.iter, initial_input.iter + initial_input.size, curr_input.iter);
             auto ts = high_resolution_clock::now();
             int num_layers = 0;
             while (curr_input.size > 1)
