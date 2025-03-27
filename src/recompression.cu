@@ -19,6 +19,8 @@
 #include "arena.cuh"
 #include "types.hpp"
 #include "util.hpp"
+#include "rlslp.hpp"
+
 #include <chrono>
 #include <iostream>
 
@@ -326,7 +328,7 @@ namespace Cu
         }
 
         using iter_t = const char *;
-        static void recompression(symbol_t alphabet_size, iter_t begin, iter_t end)
+        static Rlslp recompression(symbol_t alphabet_size, iter_t begin, iter_t end)
         {
             using std::chrono::duration;
             using std::chrono::duration_cast;
@@ -353,10 +355,15 @@ namespace Cu
                 thrust::copy(initial_input.iter, initial_input.iter + initial_input.size, curr_input.iter); },
                               "read file and transfer to a convenient spot in memory");
 
+            std::vector<symbol_t> level_sizes;
+            level_sizes.push_back(alphabet_size);
+
             int num_layers = 0;
             while (curr_input.size > 1)
             {
-                num_symbols = bcomp(arena, curr_input, curr_input_pos, unit_size, num_symbols, rules);
+                auto new_num_symbols = bcomp(arena, curr_input, curr_input_pos, unit_size, num_symbols, rules);
+                level_sizes.push_back(new_num_symbols - num_symbols);
+                num_symbols = new_num_symbols;
 
                 num_layers++;
 
@@ -370,6 +377,7 @@ namespace Cu
                     auto new_num_symbols2 = pcomp(arena, curr_input, curr_input_pos, unit_size, num_symbols, rules, cnt);
                     if (curr_input.size != prev_size)
                     {
+                        level_sizes.push_back(new_num_symbols2 - num_symbols);
                         num_symbols = new_num_symbols2;
                         break;
                     }
@@ -379,6 +387,30 @@ namespace Cu
             }
 
             rules.shrink(num_symbols);
+
+            auto rules_transformed = arena.template view_start_at_items<Rlslp::Rule>(
+                0, rules.size);
+            thrust::transform(rules.iter, rules.iter + rules.size, rules_transformed.iter, [] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &rule)
+                              { return Rlslp::Rule{.pair = {
+                                                       .children = {thrust::get<0>(rule), thrust::get<1>(rule)}}}; });
+            std::vector<Rlslp::Rule> rules_vec(rules_transformed.iter, rules_transformed.iter + rules_transformed.size);
+            std::vector<level_t> levels(rules.size, 0);
+            symbol_t sum_so_far = 0;
+            symbol_t level_index = 0;
+            for (symbol_t i = 0; i < rules.size; i++)
+            {
+                while (i == sum_so_far)
+                {
+                    sum_so_far += levels[level_index++];
+                }
+                levels[i] = level_index;
+            }
+
+            return Rlslp{.rules = std::move(rules_vec),
+                         .levels = std::move(levels),
+                         .alphabet_size = alphabet_size,
+                         .root = num_symbols - 1,
+                         .len = input_size};
         }
     };
     template struct Thrust<false>;

@@ -14,48 +14,12 @@
 #include "recompression.hpp"
 #include "types.hpp"
 #include "util.hpp"
+#include "rlslp.hpp"
 
 #include "mio/mio.hpp"
 #include <argparse/argparse.hpp>
 
-struct Rlslp
-{
-    struct Pair
-    {
-        std::array<symbol_t, 2> children;
-        symbol_t &left() { return children[0]; }
-        const symbol_t &left() const { return children[0]; }
-        symbol_t &right() { return children[1]; }
-        const symbol_t &right() const { return children[1]; }
-    };
-
-    struct Block
-    {
-        symbol_t symbol;
-        symbol_t count;
-    };
-
-    struct Rule
-    {
-        union
-        {
-            Pair pair;
-            Block block;
-        };
-        level_t level;
-    };
-
-    std::vector<Rule> rules;
-    symbol_t alphabet_size;
-    symbol_t root;
-    len_t len;
-
-    static bool level_is_block(level_t level) { return level % 2 == 1; }
-
-    static bool level_is_pair(level_t level) { return level % 2 == 0; }
-};
-
-std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, level_t level)
+std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, std::vector<level_t> &levels, level_t level)
 {
     std::vector<symbol_t> output;
 
@@ -76,7 +40,8 @@ std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
         auto it = block_to_rule.find(block);
         if (it == block_to_rule.end())
         {
-            rules.push_back({.block = {.symbol = current_symbol, .count = current_len}, .level = level});
+            rules.push_back({.block = {.symbol = current_symbol, .count = current_len}});
+            levels.push_back(level);
             auto [new_it, _insertion_happened] = block_to_rule.insert({block, next_rule++});
             it = new_it;
         }
@@ -103,7 +68,7 @@ std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
 std::mt19937 rng(7);
 std::uniform_int_distribution<std::mt19937::result_type> dist16(0, (1 << 16) - 1);
 
-std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, level_t level)
+std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rule> &rules, std::vector<level_t> &levels, level_t level)
 {
     std::vector<symbol_t> output;
 
@@ -133,8 +98,8 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
                 rules.push_back({.pair =
                                      {
                                          .children = {input[i], input[i + 1]},
-                                     },
-                                 .level = level});
+                                     }});
+                levels.push_back(level);
                 auto [new_it, _insertion_happened] = pair_to_rule.insert({pair, next_rule++});
                 it = new_it;
             }
@@ -154,6 +119,7 @@ std::vector<symbol_t> pcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
 Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
 {
     Rlslp rlslp{.rules = std::vector<Rlslp::Rule>(256, Rlslp::Rule{}),
+                .levels = std::vector<level_t>(256, 0),
                 .alphabet_size = 256,
                 .root = -1,
                 .len = (len_t)input.size()};
@@ -161,7 +127,7 @@ Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
     level_t level = 1;
     while (input.size() > 1)
     {
-        input = bcomp(input, rlslp.rules, level);
+        input = bcomp(input, rlslp.rules, rlslp.levels, level);
         level++;
 
         if (input.size() == 1)
@@ -170,7 +136,7 @@ Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
         std::vector<symbol_t> next_input;
         do
         {
-            next_input = pcomp(input, rlslp.rules, level);
+            next_input = pcomp(input, rlslp.rules, rlslp.levels, level);
         } while (input.size() == next_input.size());
         input = next_input;
         level++;
@@ -191,7 +157,7 @@ std::vector<symbol_t> expand(const Rlslp &rlslp)
             return;
         }
         auto &rule = rlslp.rules[root];
-        if (Rlslp::level_is_pair(rule.level))
+        if (Rlslp::level_is_pair(rlslp.levels[root]))
         {
             self(self, rule.pair.left());
             self(self, rule.pair.right());
@@ -227,7 +193,7 @@ std::string generate_dot(const Rlslp &rlslp)
     for (symbol_t i = rlslp.alphabet_size; i < rlslp.rules.size(); i++)
     {
         auto &rule = rlslp.rules[i];
-        if (Rlslp::level_is_pair(rule.level))
+        if (Rlslp::level_is_pair(rlslp.levels[i]))
         {
             out << "    " << i << " -> " << rule.pair.left() << "[tailport=sw]" << "\n";
             check_and_mark_terminal(rule.pair.left());
@@ -268,11 +234,13 @@ std::string generate_dot(const Rlslp &rlslp)
         out << "}\n";
     };
 
+    // Assumes that rules are written in level order
+    // Doesn't have to be this way, I'm just lazy
     for (symbol_t i = rlslp.alphabet_size + 1; i < rlslp.rules.size(); i++)
     {
         auto &prev_rule = rlslp.rules[i - 1];
         auto &rule = rlslp.rules[i];
-        if (prev_rule.level != rule.level)
+        if (rlslp.levels[i - 1] != rlslp.levels[i])
         {
             group_upto(i);
             rank_start = i;
@@ -320,10 +288,15 @@ int main(int argc, char **argv)
     std::string mode;
     std::string input_filename;
     std::string output_filename;
+    std::string debug_dot_file;
     program.add_argument("--mode")
         .help("Select how to run recompression. Options: cpu, thrust-cpu, thrust-gpu. Defaults to thrust-gpu")
         .default_value("thrust-gpu")
         .store_into(mode);
+    program.add_argument("--generate-debug-dot")
+        .help("Specify the file to put the generate dot graph into. Defaults to no file")
+        .default_value("")
+        .store_into(debug_dot_file);
     program.add_argument("input").help("What file to compress").store_into(input_filename);
     program.add_argument("output")
         .help("Name of the file to output the compressed format into")
@@ -357,10 +330,12 @@ int main(int argc, char **argv)
                                                                   { return std::vector<symbol_t>(read_only_file.begin(), read_only_file.end()); },
                                                                   "read file and transfer to a convenient spot in memory");
                               auto rlslp = recompression(256, vec_to_compress);
-                                auto dot_str = generate_dot(rlslp);
+                              if (debug_dot_file != "") {
+                            auto dot_str = generate_dot(rlslp);
                               {
                                   std::ofstream dot_out("debug.dot");
                                   dot_out << dot_str;
+                              }
                               } },
                           "plain cpu recompression w/ file read");
     }
