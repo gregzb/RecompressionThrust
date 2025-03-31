@@ -263,8 +263,8 @@ std::string generate_dot(const Rlslp &rlslp)
 
     out << "}\n";
 
-    std::cout << "nodes with indeg > 1: " << cnt << std::endl;
-    std::cout << "total nodes: " << (indeg.size() - rlslp.alphabet_size) << std::endl;
+    std::cout << "generating dot: nodes with indeg > 1: " << cnt << std::endl;
+    std::cout << "generating dot: total nodes: " << (indeg.size() - rlslp.alphabet_size) << std::endl;
 
     return out.str();
 };
@@ -272,7 +272,8 @@ std::string generate_dot(const Rlslp &rlslp)
 auto read_file(const std::string &file_path)
 {
     std::error_code error;
-    mio::mmap_source read_only_file = mio::make_mmap_source(file_path, 0, mio::map_entire_file, error);
+    // mio::ummap_source read_only_file = mio::make_mmap_source(file_path, 0, mio::map_entire_file, error);
+    mio::ummap_source read_only_file = mio::make_mmap<mio::ummap_source>(file_path, 0, mio::map_entire_file, error);
     if (error)
     {
         std::cout << "Failed to read file at " << file_path << ", exiting!" << std::endl;
@@ -316,12 +317,28 @@ int main(int argc, char **argv)
     // auto text_to_compress = read_file_into_string(input_filename);
     auto read_only_file = read_file(input_filename);
     // auto vec_to_compress = to_vec(text_to_compress);
-    using std::chrono::duration;
-    using std::chrono::duration_cast;
-    using std::chrono::high_resolution_clock;
-    using std::chrono::nanoseconds;
+    // using std::chrono::duration;
+    // using std::chrono::duration_cast;
+    // using std::chrono::high_resolution_clock;
+    // using std::chrono::nanoseconds;
     // auto t1 = high_resolution_clock::now();
     // auto rlslp = recompression(256, vec_to_compress);
+    auto process_rlslp = [&](const Rlslp &rlslp)
+    {
+        if (debug_dot_file != "")
+        {
+            time_f_print_void([&]()
+                              {
+            auto dot_str = generate_dot(rlslp);
+            {
+                std::ofstream dot_out(debug_dot_file);
+                dot_out << dot_str;
+            } }, "generate dot file");
+        }
+
+        time_f_print_void([&]()
+                          { rlslp.serialize_to(output_filename); }, "write rlslp to disk");
+    };
     if (mode == "cpu")
     {
         time_f_print_void([&]()
@@ -330,46 +347,29 @@ int main(int argc, char **argv)
                                                                   { return std::vector<symbol_t>(read_only_file.begin(), read_only_file.end()); },
                                                                   "read file and transfer to a convenient spot in memory");
                               auto rlslp = recompression(256, vec_to_compress);
-                              if (debug_dot_file != "") {
-                            auto dot_str = generate_dot(rlslp);
-                              {
-                                  std::ofstream dot_out("debug.dot");
-                                  dot_out << dot_str;
-                              }
-                              } },
+                              process_rlslp(rlslp); },
                           "plain cpu recompression w/ file read");
     }
     else if (mode == "thrust-cpu")
     {
         time_f_print_void([&]()
-                          { Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end()); }, "thrust-cpu recompression w/ file read");
+                          { auto rlslp = Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
+                          process_rlslp(rlslp); },
+                          "thrust-cpu recompression w/ file read");
     }
     else if (mode == "thrust-gpu")
     {
         time_f_print_void([&]()
                           { Cu::init(); }, "cuda init");
         time_f_print_void([&]()
-                          { Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end()); }, "thrust-gpu recompression w/ file read");
+                          { auto rlslp = Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
+                          process_rlslp(rlslp); },
+                          "thrust-gpu recompression w/ file read");
     }
     else
     {
         std::cout << "Unknown mode: " << mode << std::endl;
         exit(1);
     }
-    // auto t2 = high_resolution_clock::now();
-    // duration<double, std::milli> ms_double = t2 - t1;
-    // std::cout << "total " << (ms_double.count()) << " ms\n";
-    // auto expanded = expand(rlslp);
-    // auto expanded_text = to_string(expanded);
-    // // std::cout << text_to_compress << std::endl;
-    // // std::cout << expanded_text << std::endl;
-
-    // auto dot_str = generate_dot(rlslp);
-    // {
-    //     std::ofstream dot_out("debug.dot");
-    //     dot_out << dot_str;
-    // }
-    // std::cout
-    //     << "Used " << (rlslp.rules.size() - rlslp.alphabet_size) << " nonterminals" << std::endl;
     return 0;
 }

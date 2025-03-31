@@ -267,6 +267,7 @@ namespace Cu
                 thrust::sort_by_key(pairs.iter, pairs.iter + pairs.size, indices.iter);
 
                 auto offsets = arena.template view_start_at_items<symbol_t>(4 * original_size, pairs.size);
+                offsets.iter[0] = 0;
 
                 auto prev_and_next = thrust::make_zip_iterator(pairs.iter, pairs.iter + 1);
                 thrust::transform_inclusive_scan(
@@ -296,16 +297,18 @@ namespace Cu
 
                 thrust::scatter(offset_iter, offset_iter + offsets.size, indices.iter, curr_input.iter);
 
+                symbol_t assigned_bit_size = assigned_bit.size;
+
                 auto curr_input_and_idx = thrust::make_zip_iterator(curr_input.iter, thrust::make_counting_iterator(0));
                 if constexpr (IS_GPU)
                 {
                     auto assigned_bit_raw_ptr = thrust::device_pointer_cast(&assigned_bit.iter[0]);
                     auto new_end = thrust::remove_if(
                         curr_input_and_idx, curr_input_and_idx + curr_input.size,
-                        [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
+                        [assigned_bit_raw_ptr, assigned_bit_size] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
                         {
                             auto idx = thrust::get<1>(item);
-                            return *(assigned_bit_raw_ptr + idx + 1) == 1;
+                            return idx + 1 < assigned_bit_size && *(assigned_bit_raw_ptr + idx + 1) == 1;
                         });
 
                     curr_input.shrink(new_end - curr_input_and_idx);
@@ -315,10 +318,10 @@ namespace Cu
                     auto assigned_bit_raw_ptr = &assigned_bit.iter[0];
                     auto new_end = thrust::remove_if(
                         curr_input_and_idx, curr_input_and_idx + curr_input.size,
-                        [assigned_bit_raw_ptr] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
+                        [assigned_bit_raw_ptr, assigned_bit_size] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &item)
                         {
                             auto idx = thrust::get<1>(item);
-                            return *(assigned_bit_raw_ptr + idx + 1) == 1;
+                            return idx + 1 < assigned_bit_size && *(assigned_bit_raw_ptr + idx + 1) == 1;
                         });
 
                     curr_input.shrink(new_end - curr_input_and_idx);
@@ -327,18 +330,20 @@ namespace Cu
             return num_symbols;
         }
 
-        using iter_t = const char *;
+        using iter_t = const unsigned char *;
         static Rlslp recompression(symbol_t alphabet_size, iter_t begin, iter_t end)
         {
             using std::chrono::duration;
             using std::chrono::duration_cast;
             using std::chrono::high_resolution_clock;
             using std::chrono::nanoseconds;
+
             symbol_t num_symbols = alphabet_size;
 
             symbol_t input_size = end - begin;
 
-            symbol_t unit_size = std::max(alphabet_size * 4, input_size);
+            // symbol_t unit_size = std::max(alphabet_size * 2, input_size);
+            symbol_t unit_size = input_size + alphabet_size * 2;
 
             Arena<IS_GPU> arena(unit_size * sizeof(symbol_t) * 7);
             auto initial_input = arena.template view_start_at_items<char>(0 * unit_size, input_size);
@@ -347,7 +352,7 @@ namespace Cu
             auto curr_input_pos = CurrentInputPos::TWO;
 
             auto rules = arena.template view_start_at_bytes<thrust::tuple<symbol_t, symbol_t>>(
-                5 * unit_size * sizeof(symbol_t), input_size);
+                5 * unit_size * sizeof(symbol_t), unit_size);
 
             time_f_print_void([&]()
                               {
@@ -393,17 +398,20 @@ namespace Cu
             thrust::transform(rules.iter, rules.iter + rules.size, rules_transformed.iter, [] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &rule)
                               { return Rlslp::Rule{.pair = {
                                                        .children = {thrust::get<0>(rule), thrust::get<1>(rule)}}}; });
-            std::vector<Rlslp::Rule> rules_vec(rules_transformed.iter, rules_transformed.iter + rules_transformed.size);
+            std::vector<Rlslp::Rule> rules_vec(rules_transformed.size);
+            thrust::copy(rules_transformed.iter, rules_transformed.iter + rules_transformed.size, rules_vec.begin());
+
             std::vector<level_t> levels(rules.size, 0);
             symbol_t sum_so_far = 0;
             symbol_t level_index = 0;
+
             for (symbol_t i = 0; i < rules.size; i++)
             {
                 while (i == sum_so_far)
                 {
-                    sum_so_far += levels[level_index++];
+                    sum_so_far += level_sizes[level_index++];
                 }
-                levels[i] = level_index;
+                levels[i] = level_index - 1;
             }
 
             return Rlslp{.rules = std::move(rules_vec),
