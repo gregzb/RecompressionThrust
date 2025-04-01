@@ -174,6 +174,68 @@ std::vector<symbol_t> expand(const Rlslp &rlslp)
     return out;
 }
 
+struct TraversalItem
+{
+    symbol_t node;
+    symbol_t next_child_index;
+};
+
+void expand(const Rlslp &rlslp, auto write_f)
+{
+    std::vector<TraversalItem> stack;
+
+    stack.push_back({.node = rlslp.root,
+                     .next_child_index = 0});
+
+    std::array<char, 256> buf{};
+    size_t filled = 0;
+
+    auto add_to_buf = [&](symbol_t node)
+    {
+        buf[filled++] = node;
+        if (filled == buf.size())
+        {
+            write_f(buf.data(), filled);
+            filled = 0;
+        }
+    };
+
+    while (!stack.empty())
+    {
+        TraversalItem top = stack.back();
+        stack.pop_back();
+
+        symbol_t node = top.node;
+        if (node < rlslp.alphabet_size)
+        {
+            add_to_buf(node);
+            continue;
+        }
+        const auto &rule = rlslp.rules[node];
+        if (Rlslp::level_is_pair(rlslp.levels[node]))
+        {
+            if (top.next_child_index < 1)
+            {
+                stack.push_back({.node = node, .next_child_index = top.next_child_index + 1});
+            }
+            stack.push_back({.node = rule.pair.children[top.next_child_index], .next_child_index = 0});
+        }
+        else
+        {
+            if (top.next_child_index < rule.block.count - 1)
+            {
+                stack.push_back({.node = node, .next_child_index = top.next_child_index + 1});
+            }
+            stack.push_back({.node = rule.block.symbol, .next_child_index = 0});
+        }
+    }
+
+    if (filled > 0)
+    {
+        write_f(buf.data(), filled);
+    }
+}
+
 std::string generate_dot(const Rlslp &rlslp)
 {
     std::stringstream out;
@@ -286,22 +348,34 @@ auto read_file(const std::string &file_path)
 int main(int argc, char **argv)
 {
     argparse::ArgumentParser program("recompression");
+
+    argparse::ArgumentParser compress_command("compress");
+    compress_command.add_description("The primary mode for this program. Takes a normal file and applies recompression to it, outputting the compressed format to a new file");
     std::string mode;
     std::string input_filename;
     std::string output_filename;
     std::string debug_dot_file;
-    program.add_argument("--mode")
+    compress_command.add_argument("--mode")
         .help("Select how to run recompression. Options: cpu, thrust-cpu, thrust-gpu. Defaults to thrust-gpu")
         .default_value("thrust-gpu")
         .store_into(mode);
-    program.add_argument("--generate-debug-dot")
+    compress_command.add_argument("--generate-debug-dot")
         .help("Specify the file to put the generate dot graph into. Defaults to no file")
         .default_value("")
         .store_into(debug_dot_file);
-    program.add_argument("input").help("What file to compress").store_into(input_filename);
-    program.add_argument("output")
+    compress_command.add_argument("input").help("What file to compress").store_into(input_filename);
+    compress_command.add_argument("output")
         .help("Name of the file to output the compressed format into")
         .store_into(output_filename);
+
+    argparse::ArgumentParser decompress_command("decompress");
+    decompress_command.add_description("This format isn't really intended to be decompressed, but it feels incomplete without it");
+    decompress_command.add_argument("input").help("What file to decompress").store_into(input_filename);
+    decompress_command.add_argument("output")
+        .help("Name of the file to output the decompressed file into")
+        .store_into(output_filename);
+    program.add_subparser(compress_command);
+    program.add_subparser(decompress_command);
     try
     {
         program.parse_args(argc, argv);
@@ -314,62 +388,66 @@ int main(int argc, char **argv)
         std::exit(1);
     }
 
-    // auto text_to_compress = read_file_into_string(input_filename);
-    auto read_only_file = read_file(input_filename);
-    // auto vec_to_compress = to_vec(text_to_compress);
-    // using std::chrono::duration;
-    // using std::chrono::duration_cast;
-    // using std::chrono::high_resolution_clock;
-    // using std::chrono::nanoseconds;
-    // auto t1 = high_resolution_clock::now();
-    // auto rlslp = recompression(256, vec_to_compress);
-    auto process_rlslp = [&](const Rlslp &rlslp)
+    if (program.is_subcommand_used("compress"))
     {
-        if (debug_dot_file != "")
+        auto read_only_file = read_file(input_filename);
+        auto process_rlslp = [&](const Rlslp &rlslp)
         {
-            time_f_print_void([&]()
-                              {
+            if (debug_dot_file != "")
+            {
+                time_f_print_void([&]()
+                                  {
             auto dot_str = generate_dot(rlslp);
             {
                 std::ofstream dot_out(debug_dot_file);
                 dot_out << dot_str;
             } }, "generate dot file");
-        }
+            }
 
-        time_f_print_void([&]()
-                          { rlslp.serialize_to(output_filename); }, "write rlslp to disk");
-    };
-    if (mode == "cpu")
-    {
-        time_f_print_void([&]()
-                          {
+            time_f_print_void([&]()
+                              { rlslp.serialize_to(output_filename); }, "write rlslp to disk");
+        };
+        if (mode == "cpu")
+        {
+            time_f_print_void([&]()
+                              {
                               auto vec_to_compress = time_f_print([&]()
                                                                   { return std::vector<symbol_t>(read_only_file.begin(), read_only_file.end()); },
                                                                   "read file and transfer to a convenient spot in memory");
                               auto rlslp = recompression(256, vec_to_compress);
                               process_rlslp(rlslp); },
-                          "plain cpu recompression w/ file read");
-    }
-    else if (mode == "thrust-cpu")
-    {
-        time_f_print_void([&]()
-                          { auto rlslp = Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
+                              "plain cpu recompression w/ file read");
+        }
+        else if (mode == "thrust-cpu")
+        {
+            time_f_print_void([&]()
+                              { auto rlslp = Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
                           process_rlslp(rlslp); },
-                          "thrust-cpu recompression w/ file read");
-    }
-    else if (mode == "thrust-gpu")
-    {
-        time_f_print_void([&]()
-                          { Cu::init(); }, "cuda init");
-        time_f_print_void([&]()
-                          { auto rlslp = Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
+                              "thrust-cpu recompression w/ file read");
+        }
+        else if (mode == "thrust-gpu")
+        {
+            time_f_print_void([&]()
+                              { Cu::init(); }, "cuda init");
+            time_f_print_void([&]()
+                              { auto rlslp = Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
                           process_rlslp(rlslp); },
-                          "thrust-gpu recompression w/ file read");
+                              "thrust-gpu recompression w/ file read");
+        }
+        else
+        {
+            std::cout << "Unknown mode: " << mode << std::endl;
+            exit(1);
+        }
     }
     else
     {
-        std::cout << "Unknown mode: " << mode << std::endl;
-        exit(1);
+        std::ofstream file_out(output_filename, std::ios::binary);
+        auto rlslp = time_f_print([&]()
+                                  { return Rlslp::of_serialized(input_filename); }, "deserialize rlslp");
+        time_f_print_void([&]()
+                          { expand(rlslp, [&](const char *buf, size_t size)
+                                   { file_out.write(buf, size); }); }, "decompress rlslp");
     }
     return 0;
 }
