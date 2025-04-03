@@ -1,16 +1,13 @@
-cmake_minimum_required(VERSION 3.25.2)
+cmake_minimum_required(VERSION 3.18)
 project(MyCudaProject LANGUAGES CXX CUDA)
 
 # -------------------------
 #  Compiler and Standard
 # -------------------------
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# If no build type is specified, default to Debug.
+# If no build type is specified, default to Release.
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug CACHE STRING 
+    set(CMAKE_BUILD_TYPE Release CACHE STRING 
         "Choose the build type (e.g. Debug, Release, RelWithDebInfo, MinSizeRel)" 
         FORCE)
 endif()
@@ -51,24 +48,18 @@ file(GLOB_RECURSE PROJECT_SOURCES
 # -------------------------
 # find_package(OpenMP REQUIRED)
 
-add_executable(MyCudaProjectExe ${PROJECT_SOURCES})
-
-# target_link_libraries(MyCudaProjectExe PRIVATE OpenMP::OpenMP_CXX)
-# target_compile_options(MyCudaProjectExe PRIVATE 
-#   $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler;-fopenmp>
-# )
-
+add_executable(Recompression ${PROJECT_SOURCES})
 include(FetchContent)
 FetchContent_Declare(
     argparse
     GIT_REPOSITORY https://github.com/p-ranav/argparse.git
 )
 FetchContent_MakeAvailable(argparse)
-target_link_libraries(MyCudaProjectExe argparse)
+target_link_libraries(Recompression argparse)
 
 # Optionally set properties on the target.
-set_target_properties(MyCudaProjectExe PROPERTIES
-    CXX_STANDARD 20
+set_target_properties(Recompression PROPERTIES
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     CUDA_ARCHITECTURES native
 )

@@ -24,7 +24,19 @@ std::vector<symbol_t> to_vec(std::string input);
 
 std::string escapeChar(char c);
 
-auto time_f_store(auto f, double &millseconds_out)
+inline int time_print_depth = 0;
+
+inline void print_spaces()
+{
+    for (int i = 0; i < time_print_depth; i++)
+    {
+        std::cout << '|';
+        std::cout << ' ';
+    }
+}
+
+template <typename F>
+auto time_f_store(F f, double &millseconds_out)
 {
     using std::chrono::duration;
     using std::chrono::duration_cast;
@@ -39,15 +51,22 @@ auto time_f_store(auto f, double &millseconds_out)
     return ret;
 }
 
-auto time_f_print(auto f, const std::string &str)
+template <typename F>
+auto time_f_print(F f, const std::string &str)
 {
+    print_spaces();
+    std::cout << str << ": STARTING\n";
     double ms;
+    time_print_depth++;
     auto ret = time_f_store(f, ms);
-    std::cout << str << " took " << ms << " ms\n";
+    time_print_depth--;
+    print_spaces();
+    std::cout << str << ": " << ms << " ms\n";
     return ret;
 }
 
-auto time_f_store_void(auto f, double &millseconds_out)
+template <typename F>
+auto time_f_store_void(F f, double &millseconds_out)
 {
     using std::chrono::duration;
     using std::chrono::duration_cast;
@@ -61,9 +80,15 @@ auto time_f_store_void(auto f, double &millseconds_out)
     millseconds_out = ms_double.count();
 }
 
-auto time_f_print_void(auto f, const std::string &str)
+template <typename F>
+auto time_f_print_void(F f, const std::string &str)
 {
+    print_spaces();
+    std::cout << str << ": STARTING\n";
     double ms;
+    time_print_depth++;
     time_f_store_void(f, ms);
-    std::cout << str << " took " << ms << " ms\n";
+    time_print_depth--;
+    print_spaces();
+    std::cout << str << ": " << ms << " ms\n";
 }

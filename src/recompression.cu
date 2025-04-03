@@ -64,24 +64,6 @@ namespace Cu
             }
         };
 
-        // // using InputIterT =
-        // SizedIter<decltype(thrust::make_permutation_iterator(static_cast<symbol_t
-        // *>(nullptr),
-        // thrust::make_transform_iterator(thrust::make_counting_iterator(0),
-        // stride_functor(0))))>;
-        // // using RulesIterT =
-        // SizedIter<decltype(thrust::make_permutation_iterator(static_cast<thrust::tuple<symbol_t,
-        // symbol_t> *>(nullptr),
-        // thrust::make_transform_iterator(thrust::make_counting_iterator(0),
-        // stride_functor(0))))>; using InputIterT =
-        // SizedIter<decltype(thrust::make_permutation_iterator(thrust::device_pointer_cast<symbol_t>(nullptr),
-        // thrust::make_transform_iterator(thrust::make_counting_iterator(0),
-        // stride_functor(0))))>; using RulesIterT =
-        // SizedIter<decltype(thrust::make_permutation_iterator(thrust::device_pointer_cast<thrust::tuple<symbol_t,
-        // symbol_t>>(nullptr),
-        // thrust::make_transform_iterator(thrust::make_counting_iterator(0),
-        // stride_functor(0))))>;
-
         using InputIterType = typename std::conditional<
             IS_GPU,
             decltype(thrust::make_permutation_iterator(
@@ -91,7 +73,6 @@ namespace Cu
                 static_cast<symbol_t *>(nullptr),
                 thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor(0))))>::type;
 
-        // Select the correct Rules iterator type using std::conditional.
         using RulesIterType = typename std::conditional<
             IS_GPU,
             decltype(thrust::make_permutation_iterator(
@@ -101,7 +82,6 @@ namespace Cu
                 static_cast<thrust::tuple<symbol_t, symbol_t> *>(nullptr),
                 thrust::make_transform_iterator(thrust::make_counting_iterator(0), stride_functor(0))))>::type;
 
-        // Now wrap the types in SizedIter.
         using InputIterT = SizedIter<InputIterType>;
         using RulesIterT = SizedIter<RulesIterType>;
 
@@ -116,7 +96,6 @@ namespace Cu
             return curr_input_pos == CurrentInputPos::TWO ? CurrentInputPos::THREE : CurrentInputPos::TWO;
         }
 
-        // template <bool IS_GPU>
         static InputIterT view_for(Arena<IS_GPU> &arena, CurrentInputPos curr_input_pos, symbol_t original_size,
                                    symbol_t curr_input_size)
         {
@@ -218,20 +197,18 @@ namespace Cu
             return num_symbols;
         }
 
-        inline static size_t total_pcomp_sorted = 0;
-
         static symbol_t pcomp(Arena<IS_GPU> &arena, InputIterT &curr_input, CurrentInputPos curr_input_pos,
                               symbol_t original_size, symbol_t num_symbols, RulesIterT rules, int x)
         {
             auto pseudo_rand_bits = arena.template view_start_at_bytes<uint8_t>(
-                original_size / 2 * sizeof(symbol_t) * 3 + 0 * original_size, num_symbols);
+                original_size * sizeof(symbol_t) / 2 * 3 + 0 * original_size, num_symbols);
             auto counting_iter = thrust::make_counting_iterator(0);
 
             thrust::transform(counting_iter, counting_iter + pseudo_rand_bits.size, pseudo_rand_bits.iter,
                               efficient_random_byte_functor(num_symbols + x));
 
             auto assigned_bit = arena.template view_start_at_bytes<uint8_t>(
-                original_size / 2 * sizeof(symbol_t) * 3 + 1 * original_size, curr_input.size);
+                original_size * sizeof(symbol_t) / 2 * 3 + 1 * original_size, curr_input.size);
 
             thrust::gather(curr_input.iter, curr_input.iter + curr_input.size, pseudo_rand_bits.iter,
                            assigned_bit.iter);
@@ -346,7 +323,7 @@ namespace Cu
             symbol_t unit_size = input_size + alphabet_size * 2;
 
             Arena<IS_GPU> arena(unit_size * sizeof(symbol_t) * 7);
-            auto initial_input = arena.template view_start_at_items<char>(0 * unit_size, input_size);
+            auto initial_input = arena.template view_start_at_items<unsigned char>(0 * unit_size, input_size);
             auto curr_input = arena.template view_start_at_items<symbol_t>(2 * unit_size, input_size);
 
             auto curr_input_pos = CurrentInputPos::TWO;
@@ -395,24 +372,30 @@ namespace Cu
 
             auto rules_transformed = arena.template view_start_at_items<Rlslp::Rule>(
                 0, rules.size);
-            thrust::transform(rules.iter, rules.iter + rules.size, rules_transformed.iter, [] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &rule)
-                              { return Rlslp::Rule{.pair = {
-                                                       .children = {thrust::get<0>(rule), thrust::get<1>(rule)}}}; });
-            std::vector<Rlslp::Rule> rules_vec(rules_transformed.size);
-            thrust::copy(rules_transformed.iter, rules_transformed.iter + rules_transformed.size, rules_vec.begin());
+            std::vector<Rlslp::Rule> rules_vec;
+            std::vector<level_t> levels;
+            time_f_print_void([&]()
+                              {
+                rules_vec = std::vector<Rlslp::Rule>(rules_transformed.size);
+                levels = std::vector<level_t>(rules.size, 0);
+                thrust::transform(rules.iter, rules.iter + rules.size, rules_transformed.iter, [] __host__ __device__(const thrust::tuple<symbol_t, symbol_t> &rule)
+                                { return Rlslp::Rule{.pair = {
+                                                        .children = {thrust::get<0>(rule), thrust::get<1>(rule)}}}; });
+                thrust::copy(rules_transformed.iter, rules_transformed.iter + rules_transformed.size, rules_vec.begin());
+                
 
-            std::vector<level_t> levels(rules.size, 0);
-            symbol_t sum_so_far = 0;
-            symbol_t level_index = 0;
+                symbol_t sum_so_far = 0;
+                symbol_t level_index = 0;
 
-            for (symbol_t i = 0; i < rules.size; i++)
-            {
-                while (i == sum_so_far)
+                for (symbol_t i = 0; i < rules.size; i++)
                 {
-                    sum_so_far += level_sizes[level_index++];
-                }
-                levels[i] = level_index - 1;
-            }
+                    while (i == sum_so_far)
+                    {
+                        sum_so_far += level_sizes[level_index++];
+                    }
+                    levels[i] = level_index - 1;
+                } },
+                              "transfer back to cpu and construct levels");
 
             return Rlslp{.rules = std::move(rules_vec),
                          .levels = std::move(levels),

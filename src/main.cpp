@@ -48,7 +48,7 @@ std::vector<symbol_t> bcomp(std::vector<symbol_t> &input, std::vector<Rlslp::Rul
         output.push_back(it->second);
     };
 
-    for (len_t i = 1; i < input.size(); i++)
+    for (symbol_t i = 1; i < input.size(); i++)
     {
         if (input[i - 1] == input[i])
         {
@@ -122,7 +122,7 @@ Rlslp recompression(symbol_t alphabet_size, std::vector<symbol_t> &input)
                 .levels = std::vector<level_t>(256, 0),
                 .alphabet_size = 256,
                 .root = -1,
-                .len = (len_t)input.size()};
+                .len = (symbol_t)input.size()};
 
     level_t level = 1;
     while (input.size() > 1)
@@ -180,7 +180,8 @@ struct TraversalItem
     symbol_t next_child_index;
 };
 
-void expand(const Rlslp &rlslp, auto write_f)
+template <typename F>
+void expand(const Rlslp &rlslp, F write_f)
 {
     std::vector<TraversalItem> stack;
 
@@ -334,7 +335,6 @@ std::string generate_dot(const Rlslp &rlslp)
 auto read_file(const std::string &file_path)
 {
     std::error_code error;
-    // mio::ummap_source read_only_file = mio::make_mmap_source(file_path, 0, mio::map_entire_file, error);
     mio::ummap_source read_only_file = mio::make_mmap<mio::ummap_source>(file_path, 0, mio::map_entire_file, error);
     if (error)
     {
@@ -409,30 +409,30 @@ int main(int argc, char **argv)
         };
         if (mode == "cpu")
         {
-            time_f_print_void([&]()
-                              {
+            auto rlslp = time_f_print([&]()
+                                      {
                               auto vec_to_compress = time_f_print([&]()
                                                                   { return std::vector<symbol_t>(read_only_file.begin(), read_only_file.end()); },
                                                                   "read file and transfer to a convenient spot in memory");
-                              auto rlslp = recompression(256, vec_to_compress);
-                              process_rlslp(rlslp); },
-                              "plain cpu recompression w/ file read");
+                              return recompression(256, vec_to_compress); },
+                                      "plain cpu recompression w/ file read");
+            process_rlslp(rlslp);
         }
         else if (mode == "thrust-cpu")
         {
-            time_f_print_void([&]()
-                              { auto rlslp = Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end());
-                          process_rlslp(rlslp); },
-                              "thrust-cpu recompression w/ file read");
+            auto rlslp = time_f_print([&]()
+                                      { return Cu::Thrust<false>::recompression(256, read_only_file.begin(), read_only_file.end()); },
+                                      "thrust-cpu recompression w/ file read");
+            process_rlslp(rlslp);
         }
         else if (mode == "thrust-gpu")
         {
             time_f_print_void([&]()
                               { Cu::init(); }, "cuda init");
-            time_f_print_void([&]()
-                              { auto rlslp = Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end());
-                          process_rlslp(rlslp); },
-                              "thrust-gpu recompression w/ file read");
+            auto rlslp = time_f_print([&]()
+                                      { return Cu::Thrust<true>::recompression(256, read_only_file.begin(), read_only_file.end()); },
+                                      "thrust-gpu recompression w/ file read");
+            process_rlslp(rlslp);
         }
         else
         {
@@ -447,7 +447,7 @@ int main(int argc, char **argv)
                                   { return Rlslp::of_serialized(input_filename); }, "deserialize rlslp");
         time_f_print_void([&]()
                           { expand(rlslp, [&](const char *buf, size_t size)
-                                   { file_out.write(buf, size); }); }, "decompress rlslp");
+                                   { file_out.write(buf, size); }); }, "decompress rlslp and write to file");
     }
     return 0;
 }
