@@ -1,16 +1,13 @@
 #pragma once
+#include "types.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "types.hpp"
 
 void hash_combine(size_t &seed, size_t hash_value);
 
-template <class S, class T>
-struct pair_hash
-{
-    auto operator()(const std::pair<S, T> &pair) const noexcept -> uint64_t
-    {
+template <class S, class T> struct pair_hash {
+    auto operator()(const std::pair<S, T> &pair) const noexcept -> uint64_t {
         size_t seed = 0;
         hash_combine(seed, (size_t)(pair.first));
         hash_combine(seed, (size_t)(pair.second));
@@ -26,18 +23,14 @@ std::string escapeChar(char c);
 
 inline int time_print_depth = 0;
 
-inline void print_spaces()
-{
-    for (int i = 0; i < time_print_depth; i++)
-    {
+inline void print_spaces() {
+    for (int i = 0; i < time_print_depth; i++) {
         std::cout << '|';
         std::cout << ' ';
     }
 }
 
-template <typename F>
-auto time_f_store(F f, double &millseconds_out)
-{
+template <typename F> auto time_f_store(F f, double &millseconds_out) {
     using std::chrono::duration;
     using std::chrono::duration_cast;
     using std::chrono::high_resolution_clock;
@@ -51,9 +44,7 @@ auto time_f_store(F f, double &millseconds_out)
     return ret;
 }
 
-template <typename F>
-auto time_f_print(F f, const std::string &str)
-{
+template <typename F> auto time_f_print(F f, const std::string &str) {
     print_spaces();
     std::cout << str << ": STARTING\n";
     double ms;
@@ -65,9 +56,7 @@ auto time_f_print(F f, const std::string &str)
     return ret;
 }
 
-template <typename F>
-auto time_f_store_void(F f, double &millseconds_out)
-{
+template <typename F> auto time_f_store_void(F f, double &millseconds_out) {
     using std::chrono::duration;
     using std::chrono::duration_cast;
     using std::chrono::high_resolution_clock;
@@ -80,9 +69,7 @@ auto time_f_store_void(F f, double &millseconds_out)
     millseconds_out = ms_double.count();
 }
 
-template <typename F>
-auto time_f_print_void(F f, const std::string &str)
-{
+template <typename F> auto time_f_print_void(F f, const std::string &str) {
     print_spaces();
     std::cout << str << ": STARTING\n";
     double ms;

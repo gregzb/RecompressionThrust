@@ -1,13 +1,11 @@
 #pragma once
-#include <array>
-#include <vector>
-#include <fstream>
 #include "types.hpp"
+#include <array>
+#include <fstream>
+#include <vector>
 
-struct Rlslp
-{
-    struct Pair
-    {
+struct Rlslp {
+    struct Pair {
         std::array<symbol_t, 2> children;
         inline symbol_t &left() { return children[0]; }
         inline const symbol_t &left() const { return children[0]; }
@@ -15,16 +13,13 @@ struct Rlslp
         inline const symbol_t &right() const { return children[1]; }
     };
 
-    struct Block
-    {
+    struct Block {
         symbol_t symbol;
         symbol_t count;
     };
 
-    struct Rule
-    {
-        union
-        {
+    struct Rule {
+        union {
             Pair pair;
             Block block;
         };
@@ -40,8 +35,7 @@ struct Rlslp
 
     inline static bool level_is_pair(level_t level) { return level % 2 == 0; }
 
-    inline void serialize_to(const std::string &file_name) const
-    {
+    inline void serialize_to(const std::string &file_name) const {
         std::ofstream file_out(file_name, std::ios::binary);
         symbol_t rules_size = rules.size();
         file_out.write(reinterpret_cast<const char *>(&rules_size), sizeof(symbol_t));
@@ -52,17 +46,15 @@ struct Rlslp
         file_out.write(reinterpret_cast<const char *>(&len), sizeof(symbol_t));
     }
 
-    inline static Rlslp of_serialized(const std::string &file_name)
-    {
+    inline static Rlslp of_serialized(const std::string &file_name) {
         std::ifstream file_in(file_name, std::ios::binary);
         symbol_t rules_size;
         file_in.read(reinterpret_cast<char *>(&rules_size), sizeof(symbol_t));
-        auto rlslp = Rlslp{
-            .rules = std::vector<Rule>(rules_size),
-            .levels = std::vector<level_t>(rules_size),
-            .alphabet_size = -1,
-            .root = -1,
-            .len = -1};
+        auto rlslp = Rlslp{.rules = std::vector<Rule>(rules_size),
+                           .levels = std::vector<level_t>(rules_size),
+                           .alphabet_size = -1,
+                           .root = -1,
+                           .len = -1};
 
         file_in.read(reinterpret_cast<char *>(rlslp.rules.data()), sizeof(Rule) * rlslp.rules.size());
         file_in.read(reinterpret_cast<char *>(rlslp.levels.data()), sizeof(level_t) * rlslp.rules.size());

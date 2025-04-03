@@ -1,39 +1,30 @@
+#include "types.hpp"
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <iomanip>
-#include "types.hpp"
 
-void hash_combine(size_t &seed, size_t hash_value)
-{
-    seed ^= hash_value * 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
+void hash_combine(size_t &seed, size_t hash_value) { seed ^= hash_value * 0x9e3779b9 + (seed << 6) + (seed >> 2); }
 
-std::string to_string(std::vector<symbol_t> input)
-{
+std::string to_string(std::vector<symbol_t> input) {
     std::string out;
-    for (auto el : input)
-    {
+    for (auto el : input) {
         out.push_back(el);
     }
     return out;
 }
 
-std::vector<symbol_t> to_vec(std::string input)
-{
+std::vector<symbol_t> to_vec(std::string input) {
     std::vector<symbol_t> out;
-    for (auto el : input)
-    {
+    for (auto el : input) {
         out.push_back(std::min((unsigned int)el, 255u));
     }
     return out;
 }
 
-std::string escapeChar(char c)
-{
-    switch (c)
-    {
+std::string escapeChar(char c) {
+    switch (c) {
     case '\0':
         return "\\0";
     case '\a':
@@ -60,19 +51,12 @@ std::string escapeChar(char c)
     }
 
     // If the character is printable, just return it as a single-character string.
-    if (std::isprint(static_cast<unsigned char>(c)))
-    {
+    if (std::isprint(static_cast<unsigned char>(c))) {
         return std::string(1, c);
-    }
-    else
-    {
+    } else {
         // For non-printable characters, return a \xNN style escape.
         std::ostringstream oss;
-        oss << "\\x"
-            << std::uppercase
-            << std::hex
-            << std::setw(2)
-            << std::setfill('0')
+        oss << "\\x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
             << (static_cast<int>(static_cast<unsigned char>(c)));
         return oss.str();
     }
