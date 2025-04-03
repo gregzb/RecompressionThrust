@@ -1,5 +1,7 @@
 # Recompression - GPU Implementation using Thrust
 
+This is a GPU-accelerated implementation of a grammar-based compression algorithm, Recompression, using the Thrust library. This tool is designed for quickly compressing highly repetitive texts in a format that can we can later construct indices on.
+
 ## Background
 When we think of compression, we primarily think of two forms - entropy compression and repetition compression.
 * Entropy compression - letters that occur frequently should have a short representation, letters that occur rarely should have a longer representation
@@ -28,16 +30,16 @@ This project contains:
 * **Dot graph generation**
   * Generate a dot graph from a discovered RLSLP for visualization
 
-## Compilation and Running Prequisites
+## Compilation and Running Prerequisites
 * **Git:** For cloning
-* **Operating System:** Only tested on Linux, specifically Ubuntu, but I hope it works elsewhere :) (maybe CMakeLists.txt needs to be modified a liiiiittle)
+* **Operating System:** Only tested on Linux, specifically Ubuntu, but I hope it works elsewhere :) (maybe CMakeLists.txt needs to be modified a little)
 * **C++ Compiler:** C++17 Compliant
 * **Cuda Toolkit and nvcc:** Only tested on 12.8, probably works on 12.x
 * **CMake:** Minimum version 3.10
   * argparse from github is fetched within the CMakeLists.txt
 * **Graphviz:** To render generated dot graphs (optional)
 
-## Building the project
+## Building the Project
 1. Clone the repo
 ```
 git clone <repository-url>
@@ -52,7 +54,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
 cmake --build build
 ```
 
-## Running the project
+## Running the Project
 ### Compression
 ```
 ./build/Recompression compress <INPUT FILE> <OUTPUT FILE> --mode <MODE>
@@ -68,7 +70,7 @@ cmake --build build
 ./build/Recompression decompress out.compressed out.txt
 ```
 
-### Generate and visualize RLSLP dot graph
+### Generate and Visualize RLSLP Dot Graph
 ```
 ./build/Recompression compress <INPUT FILE> <OUTPUT FILE> --generate-debug-dot <DOT FILE>
 dot -Tpng <DOT FILE> -o <PNG FILE>
@@ -77,12 +79,15 @@ dot -Tpng <DOT FILE> -o <PNG FILE>
 dot -Tpng generated_graph.dot -o generated_graph.png
 ```
 
-## Recommended files
+## Recommended Files
 Repetition compression works especially well on highly repetitive text. [Pizza&Chili](https://pizzachili.dcc.uchile.cl/repcorpus.html) has a set of highly repetitive texts.
 
 einstein.en.txt compresses especially well
 
 ## Limitations
-* As implemented in this project, it doesn't seem trivial to support streaming or external memory compression. For gpu compression, all state needs to be held in VRAM, so approximately(?) 32 to 36 times the size of the file is needed in VRAM. On an RTX 2070 Super with 8GB of RAM, I can compress 200MB files, but not 234MB files
-* The compressed out could be much smaller - I represent all integers with a full 32 bits and without any entropy compression on top
-* The alphabet is hardcoded to 256 chars - the chars 0 to 255, but this isn't an inherent requirement for recompression  
+* **Memory Usage:** GPU compression requires state to be held in VRAM. Approximately 32 to 36 times the file size in VRAM is needed.
+  * It may be possible to reduce this, or make it support streaming or external memory efficiently.
+  * On an RTX 2070 Super with 8GB of RAM, I can compress 200MB files, but not 234MB files
+* **Compression Efficiency:** The current implementation uses full 32-bit integers without additional entropy compression, so the output is much larger than it theoretically could be
+* **Alphabet:** The alphabet is hardcoded to 256 chars (0-255)
+  * Not an inherent limitation of recompression 
