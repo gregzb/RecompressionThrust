@@ -1,6 +1,6 @@
 # Recompression - GPU Implementation using Thrust
 
-This is a GPU-accelerated implementation of a grammar-based compression algorithm, Recompression, using the Thrust library. This tool is designed for quickly compressing highly repetitive texts in a format that can we can later construct indices on.
+This is a GPU-accelerated implementation of a grammar-based compression algorithm, Recompression, using the Thrust library. This tool is designed for quickly compressing highly repetitive texts in a format that can we can later construct indices on. The goal of this implementation is to prove that a relatively quick GPU implementation exists and not to have particularly small output sizes.
 
 ## Background
 When we think of compression, we primarily think of two forms - entropy compression and repetition compression.
@@ -22,10 +22,13 @@ Somewhat informally, recompression consists of two phases run iteratively until 
 This project contains:
 * **Naive CPU compression**
   * A naive, hash-bashed implementation of recompression with random partitioning.
+  * Approx ~11MB/s on my i7 6700
 * **Thrust CPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on CPU.
+  * Approx ~10MB/s on my i7 6700
 * **Thrust GPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on GPU.
+  * Approx ~200MB/s on my RTX 2070 Super
 * **CPU Decompression**
 * **Dot graph generation**
   * Generate a dot graph from a discovered RLSLP for visualization
@@ -83,6 +86,23 @@ dot -Tpng generated_graph.dot -o generated_graph.png
 Repetition compression works especially well on highly repetitive text. [Pizza&Chili](https://pizzachili.dcc.uchile.cl/repcorpus.html) has a set of highly repetitive texts.
 
 einstein.en.txt compresses especially well
+
+## Example Dot Graph
+This is what the RLSLP for
+```
+abcdeabcdabcdabcd abcdeabcd
+```
+looks like:
+![Image](https://github.com/user-attachments/assets/2874008f-1780-480d-ae51-23e838c251c1)
+
+## Why Are The Compressed Files So Big?
+* Fixed size integers
+* No entropy compression
+* We store the level of each node, which are really only needed for some indices built on top of RLSLPs
+  * And they could technically just be reconstructed from the RLSLP
+* Recompression produces locally consistent RLSLPs - a stronger guarantee than just having some arbitrary RLSLP
+
+None of these are algorithm limitations, just limitations of this particular implementation
 
 ## Limitations
 * **Memory Usage:** GPU compression requires state to be held in VRAM. Approximately 32 to 36 times the file size in VRAM is needed.
