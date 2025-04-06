@@ -94,6 +94,8 @@ abcdeabcdabcdabcd abcdeabcd
 ```
 ![Image](https://github.com/user-attachments/assets/2874008f-1780-480d-ae51-23e838c251c1)
 
+**Pair** nodes have exactly two edges that point at different nodes. **Block** nodes have two or more edges that point at the same node.
+
 Listing out the leaf nodes of the inorder traversal start from the root (traversing down the edges of each node from left to right) of the directed acyclic graph yields the original text (decompression).
 
 Green nodes are nodes with in degree greater than one and are a visual indication for where "compression" is happening.
