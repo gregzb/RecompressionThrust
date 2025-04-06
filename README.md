@@ -94,9 +94,11 @@ abcdeabcdabcdabcd abcdeabcd
 ```
 ![Image](https://github.com/user-attachments/assets/2874008f-1780-480d-ae51-23e838c251c1)
 
-Listing out the leaf nodes of the inorder traversal (traversing down the edges of each node from left to right) of the directed acyclic graph yields the original text (decompression).
+Listing out the leaf nodes of the inorder traversal start from the root (traversing down the edges of each node from left to right) of the directed acyclic graph yields the original text (decompression).
 
 Green nodes are nodes with in degree greater than one and are a visual indication for where "compression" is happening.
+
+Since the alphabet size is currently hardcoded to 256, all of the internal nodes start at 256 and then count up.
 
 ## Why Are The Compressed Files So Big?
 * Fixed size integers
