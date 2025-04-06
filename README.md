@@ -22,13 +22,13 @@ Somewhat informally, recompression consists of two phases run iteratively until 
 This project contains:
 * **Naive CPU compression**
   * A naive, hash-bashed implementation of recompression with random partitioning.
-  * Approx ~11MB/s on my i7 6700
+  * Approx ~11MB/s on my i7 6700 on the first 100MB of einstein.en.txt
 * **Thrust CPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on CPU.
-  * Approx ~9MB/s on my i7 6700
+  * Approx ~9MB/s on my i7 6700 on the first 100MB of einstein.en.txt
 * **Thrust GPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on GPU.
-  * Approx ~200MB/s on my RTX 2070 Super
+  * Approx ~300MB/s on my RTX 2070 Super on the first 100MB of einstein.en.txt
 * **CPU Decompression**
 * **Dot graph generation**
   * Generate a dot graph from a discovered RLSLP for visualization
