@@ -88,12 +88,15 @@ Repetition compression works especially well on highly repetitive text. [Pizza&C
 einstein.en.txt compresses especially well
 
 ## Example Dot Graph
-This is what the RLSLP for
+This is what the RLSLP for this text looks like:
 ```
 abcdeabcdabcdabcd abcdeabcd
 ```
-looks like:
 ![Image](https://github.com/user-attachments/assets/2874008f-1780-480d-ae51-23e838c251c1)
+
+Listing out the leaf nodes of the inorder traversal (traversing down the edges of each node from left to right) of the directed acyclic graph yields the original text (decompression).
+
+Green nodes are nodes with in degree greater than one and are a visual indication for where "compression" is happening.
 
 ## Why Are The Compressed Files So Big?
 * Fixed size integers
