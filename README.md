@@ -25,7 +25,7 @@ This project contains:
   * Approx ~11MB/s on my i7 6700
 * **Thrust CPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on CPU.
-  * Approx ~10MB/s on my i7 6700
+  * Approx ~9MB/s on my i7 6700
 * **Thrust GPU compression**
   * The thrust-ified recompression algorithm using sorting at its core instead of hashing, running on GPU.
   * Approx ~200MB/s on my RTX 2070 Super
